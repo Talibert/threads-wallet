@@ -137,7 +137,7 @@ Ideal para o dia a dia de desenvolvimento rápido com live reload e debugging no
 1. **Crie a rede Docker compartilhada e suba a infraestrutura:**
    ```bash
    # Cria a rede compartilhada se ainda não existir
-   docker network create api-network
+   docker network create wallet-network
 
    # Sobe o banco PostgreSQL e o Apache Kafka em modo KRaft (sem Zookeeper)
    docker-compose up -d
@@ -163,7 +163,7 @@ O projeto utiliza uma estratégia de **Multi-stage Build** no [`Dockerfile`](fil
 
 1. **Crie a rede compartilhada:**
    ```bash
-   docker network create api-network
+   docker network create wallet-network
    ```
 
 2. **Suba os serviços de infraestrutura (PostgreSQL e Kafka):**
@@ -180,7 +180,7 @@ O projeto utiliza uma estratégia de **Multi-stage Build** no [`Dockerfile`](fil
 
 - **Acompanhar os logs da aplicação:**
   ```bash
-  docker logs -f spring-app-course
+  docker logs -f thread-wallet-app
   ```
 
 - **Atualizar a aplicação após alterações no código:**

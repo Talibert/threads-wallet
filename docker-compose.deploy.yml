@@ -1,18 +1,18 @@
 services:
   app:
     build: .
-    container_name: spring-app-course
+    container_name: thread-wallet-app
     ports:
       - "8080:8080"
     networks:
-      - api-network
+      - wallet-network
     environment:
       - SPRING_PROFILES_ACTIVE=postgres,kafka
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db-api-course:5432/meu_projeto
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://wallet-db:5432/walletDb
       - SPRING_DATASOURCE_USERNAME=usuario
       - SPRING_DATASOURCE_PASSWORD=senha_forte
-      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka-course:29092
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka-wallet:29092
 
 networks:
-  api-network:
+  wallet-network:
     external: true
