@@ -188,7 +188,7 @@ O projeto adota uma taxonomia estrita para tempo de execução e isolamento de t
 - **Integração ([`IntegrationAbstractTests`](file:///src/test/java/com/example/threadswallet/IntegrationAbstractTests.java)):**
   - Configuração: [`application-test-integration.properties`](file:///src/test/resources/application-test-integration.properties).
   - Escopo: `@SpringBootTest`, **sobe o contexto completo** da aplicação (pools de threads nativas e virtuais, banco e beans).
-  - Implementações: [`SimuladorConcorrenciaIntegrationTest`](file:///src/test/java/com/example/threadswallet/SimuladorConcorrenciaIntegrationTest.java).
+  - Implementações: [`SimuladorConcorrenciaIntegrationTest`](file:///src/test/java/com/example/threadswallet/integration/SimuladorConcorrenciaIntegrationTest.java).
 - **Controllers ([`ControllerAbstractTests`](file:///src/test/java/com/example/threadswallet/ControllerAbstractTests.java)):**
   - Herda de `IntegrationAbstractTests` e configura `@AutoConfigureMockMvc` para simulação HTTP sem subir porta de rede.
   - Implementações: [`SimuladorControllerTest`](file:///src/test/java/com/example/threadswallet/infra/controller/SimuladorControllerTest.java).

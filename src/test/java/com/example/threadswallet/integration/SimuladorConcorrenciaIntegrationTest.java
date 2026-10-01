@@ -1,5 +1,6 @@
-package com.example.threadswallet;
+package com.example.threadswallet.integration;
 
+import com.example.threadswallet.IntegrationAbstractTests;
 import com.example.threadswallet.application.dto.SimulacaoResult;
 import com.example.threadswallet.application.usecase.ExecutarSimulacaoCargaUseCase;
 import com.example.threadswallet.application.usecase.GerarMassaDadosUseCase;
@@ -8,7 +9,6 @@ import com.example.threadswallet.domain.carteira.CarteiraRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 
 import java.util.List;
 

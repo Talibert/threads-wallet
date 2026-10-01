@@ -187,7 +187,7 @@ A aplicação inicializa conectando ao PostgreSQL `walletDb` em `localhost:5432`
 
 ## 🧪 Cenário de Teste de Carga Massiva
 
-O projeto inclui um teste automatizado ponta a ponta ([`SimuladorConcorrenciaIntegrationTest`](file:///src/test/java/com/example/threadswallet/SimuladorConcorrenciaIntegrationTest.java)):
+O projeto inclui um teste automatizado ponta a ponta ([`SimuladorConcorrenciaIntegrationTest`](file:///src/test/java/com/example/threadswallet/integration/SimuladorConcorrenciaIntegrationTest.java)):
 
 1. Insere **1.000 carteiras** no banco H2 (com **3 a 5 ativos** cada, totalizando entre 3.000 e 5.000 ativos).
 2. Dispara o cronômetro.
