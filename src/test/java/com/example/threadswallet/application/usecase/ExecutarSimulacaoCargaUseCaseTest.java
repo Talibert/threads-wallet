@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -69,7 +70,7 @@ class ExecutarSimulacaoCargaUseCaseTest extends UnitAbstractTests {
 
         // Verifica que o executor de Virtual Threads (Spy) foi chamado para cada carteira
         verify(processarCarteiraUseCase, times(3)).execute(carteiraIdCaptor.capture(), eq(iteracoesCustom));
-        assertEquals(ids, carteiraIdCaptor.getAllValues());
+        assertThat(carteiraIdCaptor.getAllValues()).containsExactlyInAnyOrderElementsOf(ids);
     }
 
     @Test
