@@ -1,340 +1,277 @@
-# 🚀 Spring Boot 3 Clean Architecture & Event-Driven Starter Kit
+# ⚡ Threads Wallet - Simulador de Risco de Portfólios com Concorrência Híbrida
 
 ![Java 21](https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk)
 ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen?style=flat-square&logo=springboot)
-![Apache Kafka](https://img.shields.io/badge/Apache%20Kafka-KRaft-black?style=flat-square&logo=apachekafka)
+![Virtual Threads](https://img.shields.io/badge/Virtual%20Threads-Project%20Loom-blue?style=flat-square)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=flat-square&logo=postgresql)
+![H2 Database](https://img.shields.io/badge/H2-In--Memory%20(Testes)-lightblue?style=flat-square)
 ![ArchUnit](https://img.shields.io/badge/ArchUnit-1.3-yellow?style=flat-square)
 ![OpenAPI 3](https://img.shields.io/badge/OpenAPI-3.0%20%2F%20Swagger-green?style=flat-square&logo=swagger)
-![Flyway](https://img.shields.io/badge/Flyway-Migrations-red?style=flat-square&logo=flyway)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker)
 
-Template base pronto para produção voltado para criação rápida de novos microsserviços e APIs corporativas em Java 21 e Spring Boot 3. 
+Projeto desenvolvido em **Java 21** e **Spring Boot 3** focado em demonstrar o uso avançado de concorrência com **Virtual Threads** e **Threads Tradicionais de Plataforma**, garantindo o isolamento estrito entre cargas de trabalho de **I/O** e **CPU**.
+Utiliza **PostgreSQL 16** via Docker em runtime e **H2 em memória** exclusivamente para a suíte de testes automatizados.
 
-Projetado seguindo **Clean Architecture**, **Domain-Driven Design (DDD)**, **Event-Driven Architecture (EDA)** com **Apache Kafka**, versionamento de banco com **Flyway**, autenticação stateless com **JWT**, guardrails arquiteturais automatizados via **ArchUnit**, testes de integração com **EmbeddedKafka** e **Testcontainers**, e documentação interativa com **OpenAPI 3 (Swagger)**.
+O domínio do sistema é um **Simulador de Risco de Portfólios** simplificado, utilizando o método de **Monte Carlo (100.000 iterações por carteira)** para avaliar a volatilidade e risco de 1.000 carteiras de investimento em paralelo.
 
 ---
 
-## 🏛️ Princípios e Arquitetura
+## 🎯 Arquitetura de Concorrência
 
-### 1. Separação Estrita de Camadas (Clean Architecture & DDD)
+> **Princípio Central:** O sistema **não mistura** processamento pesado na mesma thread que faz chamadas de rede ou banco de dados.
 
 ```
-                       ┌─────────────────────────────────────┐
-                       │          Infra (Adapters)           │
-                       │  Controllers, JPA, Kafka, Security  │
-                       └──────────────────┬──────────────────┘
-                                          │ depende de
-                                          ▼
-                       ┌─────────────────────────────────────┐
-                       │        Application (UseCases)       │
-                       │     Commands, Queries, Results      │
-                       └──────────────────┬──────────────────┘
-                                          │ depende de
-                                          ▼
-                       ┌─────────────────────────────────────┐
-                       │           Domain (Core)             │
-                       │ Entities, Value Objects, Aggregates │
-                       │    Domain Events, Repositories      │
-                       └─────────────────────────────────────┘
+                              [ Carga de 1.000 Carteiras ]
+                                           │
+                                           ▼
+               ┌────────────────────────────────────────────────────────┐
+               │    GESTÃO DE I/O: Executor de Virtual Threads (Loom)   │
+               │         1 Virtual Thread exclusiva por carteira        │
+               └───────────────────────────┬────────────────────────────┘
+                                           │
+                        ┌──────────────────┴──────────────────┐
+                        │                                     │
+                 (1) Leitura I/O                       (4) Escrita I/O
+                        │                                     ▲
+                        ▼                                     │
+               ┌─────────────────┐                   ┌────────────────┐
+               │ Consulta Ativos │                   │ Atualiza Risco │
+               │     no H2       │                   │    no H2       │
+               └────────┬────────┘                   └────────┬───────┘
+                        │                                     │
+                        │ (2) Submete dados                   │ (3) Retorna risco
+                        ▼                                     │
+        ┌─────────────────────────────────────────────────────────────┴──────────┐
+        │        GESTÃO DE CPU: Pool Fixo de Threads Tradicionais (Platform)     │
+        │             Tamanho = Quantidade de núcleos da máquina                 │
+        │          Executa Monte Carlo (100.000 iterações matemáticas)           │
+        └────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **`domain`**: Núcleo isolado da aplicação. Contém entidades ricas, Agregados, Value Objects imutáveis e contratos de repositórios (interfaces). **Não possui dependência de frameworks** (zero anotações Spring, zero JPA, zero libs HTTP).
-- **`application`**: Casos de uso de negócio (`CreateUserUseCase`, `ChangeUserPasswordUseCase`, `LoginUseCase`). Orquestra a execução, controla transações de aplicação e gerencia fluxos via DTOs dedicados (`Command`, `Query`, `Result`).
-- **`infra`**: Camada de entrega e detalhes tecnológicos:
-  - `controller`: Endpoints REST, mapeamento de requisições (`toCommand()`) e respostas (`from(result)`).
-  - `persistence`: Entidades JPA, repositórios Spring Data e implementações dos contratos de repositório do domínio.
-  - `security`: Filtro JWT, validação de tokens e hashing seguro com BCrypt.
-  - `kafka`: Publicação de eventos de domínio (`KafkaDomainEventPublisher`) e listeners assíncronos (`UserEventsConsumer`).
-  - `config`: Beans de configuração (OpenAPI, Spring Security, Seeds de inicialização).
-  - `exception`: Tratamento global de exceções centralizado (`GlobalExceptionHandler`).
+### 1. Gestão de I/O (Virtual Threads)
+- Para cada uma das 1.000 carteiras processadas, uma **Virtual Thread sob demanda** é disparada.
+- A Virtual Thread realiza a consulta no banco H2 para buscar os ativos associados à carteira.
+- Em seguida, despacha a tarefa de computação pesada para o Pool de CPU e aguarda o resultado (`Future.get()`).
+- Durante essa espera, a Virtual Thread é **suspensa (*unmounted*)** de sua *Carrier Thread*, liberando o núcleo do sistema operacional para continuar processando outras tarefas.
+- Quando o cálculo é finalizado, a Virtual Thread é **retomada (*remounted*)** e atualiza o banco de dados com o risco calculado.
 
----
-
-### 2. Fluxo Orientado a Eventos (Event-Driven com Kafka)
-
-O projeto adota o padrão **Pull Model** para eventos de domínio em Aggregates:
-1. **Mutação no Agregado:** Quando um estado de negócio relevante é alterado (ex: criação de usuário ou alteração de senha), a entidade de domínio registra internamente o evento correspondente (`user.registerEvent(new UserCreatedEvent(...))`).
-2. **Drenagem pelo Caso de Uso:** O Use Case persiste o agregado e extrai a lista de eventos pendentes (`user.pullEvents()`).
-3. **Publicação Desacoplada:** O caso de uso delega a publicação para a interface `DomainEventPublisher`.
-4. **Envio ao Kafka:** A implementação de infraestrutura `KafkaDomainEventPublisher` identifica o tópico correto através do `KafkaTopicRegistry` e publica o evento serializado em JSON.
-5. **Consumo Assíncrono:** Consumidores Kafka (`@KafkaListener`) processam os eventos assincronamente em seus respectivos tópicos.
-
----
-
-### 3. Guardrails Automatizados de Arquitetura (ArchUnit)
-
-O projeto inclui uma suíte automatizada de testes arquiteturais ([`CleanArchitectureTest`](file:///src/test/java/com/example/api_docker/architecture/CleanArchitectureTest.java)) que roda em **~0.5s** durante o `mvn test`:
-
-| Regra | Objetivo |
-|---|---|
-| **Pureza do Domínio** | Impede qualquer import de `application`, `infra`, `org.springframework..` ou `jakarta.persistence..` no pacote `domain`. |
-| **Isolamento da Aplicação** | Impede que a camada `application` importe pacotes de `infra` ou do Spring Web (`org.springframework.web..`). |
-| **Injeção Segura** | Proíbe injeção direta em campos (`@Autowired` ou `@Value` em private fields), forçando injeção por construtor. |
-| **Inversão de Dependência (DIP)** | Garante que qualquer classe em `domain` que termine com `Repository` seja obrigatoriamente uma `interface`. |
-| **Padronização de Pacotes** | Garante que classes terminadas em `Controller` estejam em `infra.controller` e `UseCase` em `application..usecase`. |
-
----
-
-### 4. Paginação Desacoplada e Agnóstica a Framework
-
-Em vez de vazar classes proprietárias do Spring Data (`Pageable`, `Page`) para o núcleo da aplicação, o projeto utiliza abstrações puras:
-- **`PaginationRequest` (Domain):** Especificação pura de página (`page`), tamanho (`size`), ordenação (`sortBy`) e direção (`sortDirection`), com proteções embutidas contra valores negativos ou tamanhos abusivos (`size > 100`).
-- **`PageResult<T>` (Domain):** Envelope genérico imutável contendo os itens e metadados (`page`, `size`, `totalElements`, `totalPages`, `isFirst`, `isLast`) com suporte a transformação funcional via `.map()`.
-- **`PageResponse<T>` (Infra):** DTO padronizado de resposta REST para o frontend, documentado com esquemas OpenAPI.
-- **`UserRepositoryImpl` (Infra):** Converte a abstração de domínio em `PageRequest.of(...)` do Spring Data JPA e mapeia o resultado de volta para `PageResult<User>`.
-
----
-
-### 5. Versionamento de Schema com Flyway (Zero `ddl-auto=update` em Produção)
-
-Em ambientes profissionais, o `ddl-auto=update` do Hibernate é perigoso (não gera histórico, não permite rollback e falha em alterações destrutivas ou renomeações). 
-
-O projeto adota o **Flyway**:
-- **Migrations SQL Imutáveis:** Armazenadas em `src/main/resources/db/migration/` no padrão `V<versao>__<descricao>.sql` (ex: `V1__create_users_table.sql`).
-- **Validação Estrita com Hibernate (`ddl-auto=validate`):** O Hibernate nunca altera o banco; ele apenas valida se as entidades JPA (`@Entity`) estão 100% em sincronia com o schema gerado pelo Flyway.
-- **Testes Automatizados de Migration ([`FlywayMigrationTest.java`](file:///src/test/java/com/example/api_docker/infra/persistence/FlywayMigrationTest.java)):** Valida a execução de todas as migrations, estado `SUCCESS`, integridade de tabelas, colunas e chaves primárias.
-
----
-
-## 📁 Estrutura de Diretórios
-
-```
-src/main/java/com/example/api_docker/
-├── domain/
-│   ├── shared/             # Classes base (AggregateRoot, DomainEvent, EntityId, ValueObject)
-│   │   └── pagination/     # PaginationRequest e PageResult<T> (Abstrações puras)
-│   └── user/               # Agregado User, Email, Password, Eventos e UserRepository
-├── application/
-│   ├── auth/               # Commands, Results e UseCase de Autenticação / Login
-│   └── user/               # Commands, Queries (ListUsersQuery), Results e UseCases
-└── infra/
-    ├── config/             # Configurações do Spring (OpenApiConfig, SecurityConfig, UserSeedConfig)
-    ├── controller/         # Controllers REST, DTOs de entrada e PageResponse<T>
-    ├── exception/          # GlobalExceptionHandler e ErrorResponse padronizado
-    ├── kafka/              # Publisher, Topic Registry e Consumers Kafka
-    ├── persistence/        # Entidades JPA e Repositórios Spring Data
-    └── security/           # Filtro JWT, Token Generator e BCrypt
-
-src/main/resources/
-└── db/migration/           # Scripts SQL versionados do Flyway (V1__..., V2__...)
-```
-
----
-
-## ⚡ Como Executar o Projeto
-
-### Pré-requisitos
-- **Docker** e **Docker Compose**
-- **Java 21** (necessário apenas para rodar localmente fora do container)
-
----
-
-### Opção A: Desenvolvimento Local (API no Host / IDE + Infra no Docker)
-
-Ideal para o dia a dia de desenvolvimento rápido com live reload e debugging no IntelliJ/VSCode:
-
-1. **Crie a rede Docker compartilhada e suba a infraestrutura:**
-   ```bash
-   # Cria a rede compartilhada se ainda não existir
-   docker network create wallet-network
-
-   # Sobe o banco PostgreSQL e o Apache Kafka em modo KRaft (sem Zookeeper)
-   docker-compose up -d
-   ```
-
-2. **Execute a aplicação Spring Boot:**
-   ```bash
-   ./mvnw spring-boot:run
-   ```
-   *(Ou execute o método `main` da classe `ApiDockerApplication` diretamente pela sua IDE).*
-
----
-
-### Opção B: Deploy e Containerização Completa (Production-Ready com `compose.deploy`)
-
-Para rodar todo o ecossistema (Aplicação + Banco + Kafka) 100% conteinerizado de forma idêntica à produção:
-
-O projeto utiliza uma estratégia de **Multi-stage Build** no [`Dockerfile`](file:///Dockerfile):
-- **Estágio 1 (Build):** Imagem Maven com Java 21 compila o código e gera o `.jar`.
-- **Estágio 2 (Runtime):** O `.jar` compilado é copiado para uma imagem enxuta baseada em `eclipse-temurin:21-jre`, garantindo performance, inicialização rápida e menor superfície de vulnerabilidades.
-
-#### Passo a Passo para Subir o Ambiente Completo:
-
-1. **Crie a rede compartilhada:**
-   ```bash
-   docker network create wallet-network
-   ```
-
-2. **Suba os serviços de infraestrutura (PostgreSQL e Kafka):**
-   ```bash
-   docker-compose up -d
-   ```
-
-3. **Compile e inicie o container da aplicação:**
-   ```bash
-   docker-compose -f docker-compose.deploy.yml up --build -d
-   ```
-
-#### Comandos Úteis do Container da Aplicação:
-
-- **Acompanhar os logs da aplicação:**
-  ```bash
-  docker logs -f thread-wallet-app
+### 2. Gestão de CPU (Pool Fixo de Threads Nativas)
+- Pool de threads tradicionais configurado com tamanho fixo igual ao número de núcleos disponíveis na máquina:
+  ```java
+  int cores = Runtime.getRuntime().availableProcessors();
+  Executors.newFixedThreadPool(cores, Thread.ofPlatform().name("cpu-worker-", 1).factory());
   ```
-
-- **Atualizar a aplicação após alterações no código:**
-  ```bash
-  # O parâmetro --build força uma nova compilação no container
-  docker-compose -f docker-compose.deploy.yml up --build -d
-  ```
-
-- **Parar a aplicação e a infraestrutura:**
-  ```bash
-  # Para a aplicação
-  docker-compose -f docker-compose.deploy.yml down
-
-  # Para o banco e kafka
-  docker-compose down
-  ```
+- O pool recebe os ativos da carteira e executa um laço longo de **100.000 iterações** de simulação de choques de mercado gerando números aleatórios via `ThreadLocalRandom.current().nextGaussian()`.
+- Garante saturação máxima dos núcleos físicos de processamento, **sem incorrer no custo excessivo de troca de contexto (*context switching*)** de criar milhares de threads nativas do SO.
 
 ---
 
-### 🔑 Credenciais Padrão (Seed Admin)
-Ao inicializar a aplicação (seja localmente ou via container), um administrador é provisionado automaticamente:
-- **Email:** `admin@course.com`
-- **Senha padrão:** `MaluZoe` *(customizável via variável de ambiente `ADMIN_SEED_PASSWORD`)*
-- **Health Check & Probes (Actuator):** [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
+## 🗄️ Modelagem de Dados (PostgreSQL / H2 nos Testes)
 
----
+Estrutura simples e direta com relacionamento 1 para N:
 
-## 🗄️ Gerenciamento de Banco de Dados: Flyway & Utilitário DBInstall
-
-O projeto utiliza **Flyway** para controle de versão e migrações do banco de dados PostgreSQL, em conjunto com `spring.jpa.hibernate.ddl-auto=validate`. Isso assegura que o Hibernate **nunca altere o schema em tempo de execução**, garantindo estabilidade absoluta e rastreabilidade total de mudanças.
-
-### ⚡ Utilitário `DBInstall` (Gerador de DDL para Migrations)
-
-Ao criar uma nova entidade JPA ou novos relacionamentos no projeto (como `@ManyToOne`, `@OneToMany`, Foreign Keys, Chaves Primárias ou Constraints), você **não precisa escrever o script DDL SQL do zero manualmente**.
-
-A classe [`DBInstall`](file:///Users/taliberti/Development/Personal/BaseProject/src/main/java/com/example/api_docker/infra/tools/DBInstall.java) (`infra.tools.DBInstall`) foi criada especificamente para isso:
-- 🔍 **Escaneamento Automático:** Varre o classpath em busca de todas as classes anotadas com `@Entity`.
-- 🐘 **Dialeto PostgreSQL:** Utiliza a engine de DDL do Hibernate 6 configurada com `PostgreSQLDialect` e convenção `snake_case` (`CamelCaseToUnderscoresNamingStrategy`).
-- 🔗 **Geração Completa:** Gera instruções DDL para `CREATE TABLE`, `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE CONSTRAINT`, `INDEX` e `SEQUENCE`.
-- 🔌 **Execução 100% Offline:** Não requer conexão com banco de dados ativa para gerar o script.
-
-#### Como Executar o `DBInstall`:
-
-1. **Pela sua IDE (IntelliJ IDEA, Eclipse, VSCode):**
-   - Navegue até `src/main/java/com/example/api_docker/infra/tools/DBInstall.java`.
-   - Clique com o botão direito e selecione **Run 'DBInstall.main()'** (ou clique no ícone de Play verde ao lado de `main`).
-
-2. **Via Linha de Comando (Terminal):**
-   ```bash
-   ./mvnw compile exec:java -Dexec.mainClass="com.example.api_docker.infra.tools.DBInstall"
-   ```
-
-#### Exemplo de Saída no Console:
-```sql
-================================================================================
- 🚀 DBInstall - Gerador de DDL SQL para Migrations (Dialeto: PostgreSQL)
-================================================================================
-
-🔍 Entidades encontradas (1):
-   - com.example.api_docker.infra.persistence.user.UserJpaEntity
-
---------------------------------------------------------------------------------
---- INÍCIO DO DDL GERADO (Copie para sua migration Flyway) ---
---------------------------------------------------------------------------------
-
-create table users (
-    user_id uuid not null,
-    created_at timestamp(6) not null,
-    email varchar(255) not null unique,
-    first_name varchar(255) not null,
-    last_name varchar(255) not null,
-    password_hash varchar(255) not null,
-    primary key (user_id)
-);
-
---------------------------------------------------------------------------------
---- FIM DO DDL GERADO ---
---------------------------------------------------------------------------------
+```
+┌──────────────────────────────────────┐
+│               CARTEIRA               │
+├──────────────────────────────────────┤
+│ id: BIGINT [PK, Auto Increment]      │
+│ nome_cliente: VARCHAR NOT NULL       │
+│ risco_calculado: DOUBLE NULL         │
+└──────────────────┬───────────────────┘
+                   │ 1
+                   │
+                   │ N
+┌──────────────────▼───────────────────┐
+│                ATIVO                 │
+├──────────────────────────────────────┤
+│ id: BIGINT [PK, Auto Increment]      │
+│ carteira_id: BIGINT [FK -> CARTEIRA] │
+│ ticker: VARCHAR NOT NULL             │
+│ valor_atual: DOUBLE NOT NULL         │
+│ taxa_volatilidade: DOUBLE NOT NULL   │
+└──────────────────────────────────────┘
 ```
 
-#### Passo a Passo para Criar uma Nova Migration:
-1. Crie ou altere a entidade JPA em `infra/persistence/`.
-2. Execute o `DBInstall`.
-3. Copie o SQL gerado para o novo arquivo em:
-   `src/main/resources/db/migration/V<numero>__<descricao>.sql` (ex: `V2__create_orders_table.sql`).
-4. Execute `./mvnw test` para validar a migration e a conformidade do schema!
+---
+
+## 📁 Estrutura do Projeto (Clean Architecture)
+
+```
+com.example.threadswallet/
+├── Application.java                             # Inicialização Spring Boot
+├── domain/                                      # Regras de Negócio e Domínio Puro
+│   ├── carteira/
+│   │   ├── Carteira.java                        # Entidade / Agregado
+│   │   ├── Ativo.java                           # Entidade de Ativo
+│   │   ├── CarteiraRepository.java              # Interface de Repositório (DIP)
+│   │   └── CalculadoraRisco.java                # Interface de Cálculo de Risco (DIP)
+│   └── exception/
+│       └── DomainException.java                 # Exceções de Domínio
+├── application/                                 # Casos de Uso e Orquestração
+│   ├── dto/
+│   │   ├── SimulacaoResult.java                 # Métricas da simulação
+│   │   └── CarteiraDTO.java                     # DTO de leitura de carteira
+│   └── usecase/
+│       ├── ProcessarCarteiraUseCase.java        # Orquestração I/O -> CPU -> I/O
+│       ├── ExecutarSimulacaoCargaUseCase.java   # Disparo das 1.000 Virtual Threads
+│       ├── GerarMassaDadosUseCase.java          # Inserção em lote no banco
+│       └── ListarCarteirasUseCase.java          # Consulta de carteiras
+└── infra/                                       # Adaptadores Tecnológicos
+    ├── config/
+    │   ├── ConcurrencyConfig.java               # Configuração dos Executores (VT e CPU)
+    │   └── OpenApiConfig.java                   # Configuração Swagger
+    ├── calculation/
+    │   └── MonteCarloCalculadoraRiscoImpl.java  # Motor de Monte Carlo (100.000 iterações)
+    ├── persistence/
+    │   ├── CarteiraJpaEntity.java               # Entidade JPA Carteira
+    │   ├── AtivoJpaEntity.java                  # Entidade JPA Ativo
+    │   ├── CarteiraJpaRepository.java           # Spring Data JPA
+    │   ├── AtivoJpaRepository.java              # Spring Data JPA
+    │   └── CarteiraRepositoryImpl.java          # Implementação de CarteiraRepository
+    ├── controller/
+    │   ├── SimuladorController.java             # Endpoints REST
+    │   └── dto/
+    │       ├── SimulacaoResponse.java           # DTO de resposta da simulação
+    │       └── CarteiraResponse.java            # DTO de carteira
+    ├── tools/
+    │   └── DBInstall.java                       # Gerador autônomo de DDL para Migrations Flyway
+    └── exception/
+        ├── GlobalExceptionHandler.java          # Tratamento de exceções
+        └── ErrorResponse.java                   # Payload de erro
+```
 
 ---
 
-## 📖 Documentação Interativa & Testes (OpenAPI 3 / Swagger)
+## 🗄️ Migrations com Flyway e Utilitário DBInstall
 
-A API possui documentação interativa gerada automaticamente com suporte a autenticação via **Bearer Token (JWT)**:
+O banco de dados de produção (PostgreSQL) e os testes automatizados utilizam o **Flyway** para versionamento de schema:
+- **Localização dos scripts:** [`src/main/resources/db/migration/`](file:///src/main/resources/db/migration/)
+- **Migration inicial:** [`V1__create_carteira_and_ativo_tables.sql`](file:///src/main/resources/db/migration/V1__create_carteira_and_ativo_tables.sql)
+- **Validação de Schema:** `spring.jpa.hibernate.ddl-auto=validate` garante sincronismo estrito entre entidades JPA e as tabelas reais.
 
+### Utilitário `DBInstall`:
+O projeto possui o utilitário autônomo [`DBInstall`](file:///src/main/java/com/example/threadsWallet/infra/tools/DBInstall.java), que inspeciona as entidades JPA via reflexão e gera os comandos DDL formatados para PostgreSQL:
+```bash
+./mvnw compile exec:java -Dexec.mainClass="com.example.threadswallet.infra.tools.DBInstall"
+```
+
+---
+
+## ⚡ Como Executar
+
+### Pré-requisitos:
+- **Java 21** ou superior instalado.
+- **Docker** e **Docker Compose** instalados.
+
+### 1. Subir o PostgreSQL via Docker Compose:
+```bash
+# Cria a rede docker caso não exista
+docker network create wallet-network
+
+# Sobe o container wallet-db com o PostgreSQL 16
+docker-compose up -d
+```
+
+### 2. Iniciar a Aplicação:
+```bash
+./mvnw spring-boot:run
+```
+
+A aplicação inicializa conectando ao PostgreSQL `walletDb` em `localhost:5432`:
 - **Swagger UI:** [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-- **OpenAPI JSON Spec:** [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
-
-### Como testar endpoints protegidos no Swagger UI:
-1. Acesse o Swagger UI no navegador.
-2. Abra a seção **Autenticação** e execute o endpoint `POST /auth/login` com as credenciais do admin (`admin@course.com` / `MaluZoe`).
-3. Copie o valor do campo `token` retornado no corpo da resposta.
-4. No topo da página do Swagger, clique no botão verde **Authorize** (com ícone de cadeado).
-5. Cole o token no campo de valor e confirme.
-6. Todos os endpoints protegidos (`GET /user`, `GET /user/me`, `POST /user/register`, `PATCH /user/password`) agora podem ser executados diretamente pelo navegador!
-
-### 🚀 Importação no Bruno ou Postman:
-Você pode importar todas as rotas e tipos diretamente no **Bruno** ou **Postman**:
-1. No seu client HTTP, selecione a opção **Import**.
-2. Escolha importar via URL OpenAPI / Swagger.
-3. Insira a URL: `http://localhost:8080/v3/api-docs`.
+- **Credenciais do PostgreSQL:** Definidas no `docker-compose.yml`:
+  - **URL:** `jdbc:postgresql://localhost:5432/walletDb`
+  - **Usuário:** `usuario`
+  - **Senha:** `senha_forte`
 
 ---
 
-## 🧪 Estratégia e Execução de Testes
+## 🧪 Cenário de Teste de Carga Massiva
 
-O projeto conta com uma pirâmide completa de testes automatizados:
-1. **Testes de Arquitetura:** Validação contínua com ArchUnit (10 guardrails).
-2. **Testes de Migrations (Flyway):** Validação de histórico, estado `SUCCESS` e conformidade DDL das tabelas e colunas.
-3. **Testes Unitários:** Testes de domínio, Value Objects, paginação e Use Cases isolados com Mockito.
-4. **Testes de Controller:** Testes de camada web com `MockMvc` e validações de DTO.
-5. **Testes de Integração:** Testes de persistência e validação de schema Hibernate (`ddl-auto=validate`).
-6. **Testes End-to-End (E2E) com Kafka:** Fluxo completo via `@EmbeddedKafka` validando: chamada HTTP -> Controller -> Banco de Dados -> Disparo de Evento -> Consumo pelo Listener Kafka.
+O projeto inclui um teste automatizado ponta a ponta ([`SimuladorConcorrenciaIntegrationTest`](file:///src/test/java/com/example/threadswallet/SimuladorConcorrenciaIntegrationTest.java)):
 
-Para executar todos os testes da aplicação:
+1. Insere **1.000 carteiras** no banco H2 (com **3 a 5 ativos** cada, totalizando entre 3.000 e 5.000 ativos).
+2. Dispara o cronômetro.
+3. Submete as **1.000 carteiras simultaneamente** ao executor de Virtual Threads em um laço.
+4. O Pool de CPU processa as simulações matemáticas (**100.000 iterações** de Monte Carlo por carteira $\times$ 1.000 carteiras = **100.000.000 iterações** no total).
+5. As Virtual Threads gravam os riscos calculados no H2.
+6. Imprime o tempo total gasto e valida se todas as 1.000 carteiras possuem risco calculado maior que zero.
+
+### Executando os Testes via Terminal:
 ```bash
 ./mvnw test
 ```
 
+### Exemplo de Saída no Console:
+```
+================================================================================
+ 🚀 SIMULAÇÃO DE CARGA CONCLUÍDA COM SUCESSO!
+================================================================================
+ 📊 Total de Carteiras Processadas: 1000
+ ⏱️  Tempo Total Decorrido: 17445 ms (17.45 s)
+ ⚡ Tempo Médio por Carteira: 17.45 ms
+ 🧠 Núcleos de CPU (Pool Fixo): 10
+ 🎲 Iterações de Monte Carlo por Carteira: 100000
+ 🧵 Gestão de I/O: 1000 Virtual Threads disparadas concorrentemente
+================================================================================
+```
+
+### 🧬 Taxonomia e Hierarquia de Testes
+
+Para garantir testes rápidos e sem acoplamentos desnecessários, o projeto define classes abstratas dedicadas:
+
+| Categoria | Classe Base | Arquivo de Propriedades | Escopo Carregado |
+|---|---|---|---|
+| **Unitários** | [`UnitAbstractTests`](file:///src/test/java/com/example/threadswallet/UnitAbstractTests.java) | `application-test-unit.properties` | **Zero Spring Context, zero banco**. Apenas JUnit 5 e Mockito. |
+| **Repositório** | [`RepositoryAbstractTests`](file:///src/test/java/com/example/threadswallet/RepositoryAbstractTests.java) | `application-test-repository.properties` | `@DataJpaTest`: Apenas banco H2 + JPA + Migrations Flyway. |
+| **Integração** | [`IntegrationAbstractTests`](file:///src/test/java/com/example/threadswallet/IntegrationAbstractTests.java) | `application-test-integration.properties` | `@SpringBootTest`: Contexto completo, pools de concorrência e banco. |
+| **Controllers** | [`ControllerAbstractTests`](file:///src/test/java/com/example/threadswallet/ControllerAbstractTests.java) | `application-test-integration.properties` | Herda integração e disponibiliza `MockMvc` para chamadas HTTP. |
+
 ---
 
-## 🛠️ Como Usar este Repositório como Novo Projeto (Starter Kit)
+## 🌐 Endpoints REST
 
-Para iniciar um novo projeto a partir deste repositório:
+| Método | Endpoint | Parâmetros | Descrição |
+|---|---|---|---|
+| `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a base de carteiras com 3 a 5 ativos cada no H2. |
+| `POST` | `/api/simulador/executar` | `limite` (opcional) | **Passo 2:** Dispara o cálculo concorrente para as carteiras cadastradas. Retorna erro 400 se a base estiver vazia. |
+| `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras e seus riscos calculados. |
 
-1. **Clonar ou Criar Repositório a partir deste:**
-   ```bash
-   git clone <URL_DESTE_REPOSITORIO> meu-novo-microsservico
-   cd meu-novo-microsservico
-   rm -rf .git
-   git init
-   ```
-2. **Atualizar Metadados do Projeto no `pom.xml`:**
-   - Altere `<groupId>`, `<artifactId>`, `<name>` e `<description>`.
-3. **Ajustar Nome da Aplicação:**
-   - Em `src/main/resources/application.properties`, altere `spring.application.name`.
-4. **Modelar seu Novo Domínio:**
-   - Crie seu agregado dentro de `domain/<novo-dominio>/` estendendo `AggregateRoot`.
-   - Defina Value Objects e eventos de domínio.
-   - Crie os UseCases em `application/<novo-dominio>/usecase/`.
-   - Adicione os controllers e DTOs em `infra/controller/<novo-dominio>/`.
-   - Registre os novos tópicos Kafka em `KafkaTopicRegistry.java` e `EventType.java`.
-5. **Validar:**
-   - Rode `./mvnw test` e tenha certeza de que todas as regras do ArchUnit continuam respeitadas!
+### Exemplo de Disparo sob Demanda via cURL:
+
+```bash
+# 1. Gerar a massa de 1.000 carteiras no H2
+curl -X POST "http://localhost:8080/api/simulador/massa-dados?totalCarteiras=1000&limparAntes=true"
+
+# 2. Disparar a simulação e o cálculo concorrente
+curl -X POST "http://localhost:8080/api/simulador/executar"
+
+# 3. Consultar as carteiras e riscos resultantes
+curl -X GET "http://localhost:8080/api/simulador/carteiras"
+```
+
+### Exemplo de Resposta JSON:
+```json
+{
+  "totalCarteirasProcessadas": 1000,
+  "tempoTotalMs": 17445,
+  "tempoTotalSegundos": 17.45,
+  "tempoMedioPorCarteiraMs": 17.45,
+  "nucleosCpuDisponiveis": 10,
+  "iteracoesMonteCarloPorCarteira": 100000,
+  "mensagem": "Simulação massiva de concorrência concluída com sucesso."
+}
+```
 
 ---
 
-## 📄 Licença
-Distribuído sob a licença MIT. Consulte `LICENSE` para obter mais informações.
+## 🏛️ Guardrails com ArchUnit
+
+O projeto possui 10 regras arquiteturais verificadas continuamente via [`CleanArchitectureTest`](file:///src/test/java/com/example/threadswallet/architecture/CleanArchitectureTest.java), garantindo:
+- Pureza absoluta do `domain` (zero dependências de Spring, JPA ou HTTP).
+- Isolamento da camada `application`.
+- Injeção obrigatória por construtor (sem field injection com `@Autowired`).
+- Inversão de dependência (DIP) com interfaces de repositório no domínio.
+
+```bash
+./mvnw test -Dtest=CleanArchitectureTest
+```

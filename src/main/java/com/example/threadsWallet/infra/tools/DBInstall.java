@@ -1,4 +1,4 @@
-package com.example.api_docker.infra.tools;
+package com.example.threadswallet.infra.tools;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
@@ -59,7 +59,7 @@ public class DBInstall {
 
             scanner.addIncludeFilter(new AnnotationTypeFilter(Entity.class));
 
-            Set<BeanDefinition> entityDefs = scanner.findCandidateComponents("com.example.api_docker");
+            Set<BeanDefinition> entityDefs = scanner.findCandidateComponents("com.example.threadswallet");
 
             for (BeanDefinition def : entityDefs) {
                 Class<?> entityClass = Class.forName(def.getBeanClassName());
@@ -93,10 +93,10 @@ public class DBInstall {
             ClassPathScanningCandidateComponentProvider scanner =
                     new ClassPathScanningCandidateComponentProvider(false);
             scanner.addIncludeFilter(new AnnotationTypeFilter(Entity.class));
-            Set<BeanDefinition> entityDefs = scanner.findCandidateComponents("com.example.api_docker");
+            Set<BeanDefinition> entityDefs = scanner.findCandidateComponents("com.example.threadswallet");
 
             if (entityDefs.isEmpty()) {
-                System.out.println("⚠️ Nenhuma entidade com @Entity encontrada no pacote com.example.api_docker.");
+                System.out.println("⚠️ Nenhuma entidade com @Entity encontrada no pacote com.example.threadswallet.");
                 return;
             }
 

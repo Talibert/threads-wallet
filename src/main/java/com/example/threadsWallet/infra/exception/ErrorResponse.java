@@ -1,9 +1,14 @@
-package com.example.api_docker.infra.exception;
+package com.example.threadswallet.infra.exception;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 
-public record ErrorResponse(String code, String message, Instant timestamp) {
-    public static ErrorResponse of(String code, String message) {
-        return new ErrorResponse(code, message, Instant.now());
+public record ErrorResponse(
+        int status,
+        String error,
+        String message,
+        LocalDateTime timestamp
+) {
+    public static ErrorResponse of(int status, String error, String message) {
+        return new ErrorResponse(status, error, message, LocalDateTime.now());
     }
 }

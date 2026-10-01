@@ -7,11 +7,9 @@ services:
     networks:
       - wallet-network
     environment:
-      - SPRING_PROFILES_ACTIVE=postgres,kafka
       - SPRING_DATASOURCE_URL=jdbc:postgresql://wallet-db:5432/walletDb
       - SPRING_DATASOURCE_USERNAME=usuario
       - SPRING_DATASOURCE_PASSWORD=senha_forte
-      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka-wallet:29092
 
 networks:
   wallet-network:

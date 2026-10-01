@@ -1,74 +1,31 @@
-package com.example.api_docker.infra.exception;
+package com.example.threadswallet.infra.exception;
 
-import com.example.api_docker.domain.shared.exception.DomainException;
-import com.example.api_docker.domain.shared.exception.NotFoundException;
-import com.example.api_docker.domain.user.exception.EmailAlreadyInUseException;
-import com.example.api_docker.domain.user.exception.InvalidCredentialsException;
-import lombok.extern.slf4j.Slf4j;
+import com.example.threadswallet.domain.exception.DomainException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // Erros de validação do @Valid
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(
-            MethodArgumentNotValidException ex) {
-        var errors = ex.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .map(e -> e.getField() + ": " + e.getDefaultMessage())
-                .toList();
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-        return ResponseEntity
-                .badRequest()
-                .body(ErrorResponse.of("VALIDATION_ERROR", String.join(", ", errors)));
-    }
-
-    // Credenciais inválidas → 401
-    @ExceptionHandler(InvalidCredentialsException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidCredentials(
-            InvalidCredentialsException ex) {
-        return ResponseEntity
-                .status(HttpStatus.UNAUTHORIZED)
-                .body(ErrorResponse.of("INVALID_CREDENTIALS", ex.getMessage()));
-    }
-
-    @ExceptionHandler(EmailAlreadyInUseException.class)
-    public ResponseEntity<ErrorResponse> handleEmailAlreadyInUse(
-            EmailAlreadyInUseException ex) {
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of("CONFLICT", ex.getMessage()));
-    }
-
-    // Recurso não encontrado → 404
-    @ExceptionHandler(NotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(NotFoundException ex) {
-        return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.of("NOT_FOUND", ex.getMessage()));
-    }
-
-    // Violação de regra de negócio → 422
     @ExceptionHandler(DomainException.class)
-    public ResponseEntity<ErrorResponse> handleDomain(DomainException ex) {
+    public ResponseEntity<ErrorResponse> handleDomainException(DomainException ex) {
+        log.warn("Exceção de domínio: {}", ex.getMessage());
         return ResponseEntity
-                .unprocessableEntity()
-                .body(ErrorResponse.of("BUSINESS_ERROR", ex.getMessage()));
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Erro de Domínio", ex.getMessage()));
     }
 
-    // Erro inesperado → 500
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
-        log.error("Unexpected error occurred: ", ex);
+    public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
+        log.error("Erro interno não tratado: ", ex);
         return ResponseEntity
-                .internalServerError()
-                .body(ErrorResponse.of("INTERNAL_ERROR", "Erro interno. Tente novamente."));
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Erro Interno do Servidor", ex.getMessage()));
     }
 }
