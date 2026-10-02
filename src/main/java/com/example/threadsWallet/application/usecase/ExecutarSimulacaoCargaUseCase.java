@@ -2,6 +2,7 @@ package com.example.threadswallet.application.usecase;
 
 import com.example.threadswallet.application.dto.SimulacaoResult;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
+import com.example.threadswallet.domain.carteira.MetodoCalculo;
 import com.example.threadswallet.domain.exception.DomainException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,14 +39,18 @@ public class ExecutarSimulacaoCargaUseCase {
     }
 
     public SimulacaoResult execute(Integer limite) {
-        return execute(limite, null);
+        return execute(limite, null, MetodoCalculo.MONTE_CARLO);
+    }
+
+    public SimulacaoResult execute(Integer limite, Integer iteracoes) {
+        return execute(limite, iteracoes, MetodoCalculo.MONTE_CARLO);
     }
 
     /**
      * Executa o cálculo de risco concorrente apenas para carteiras já cadastradas na base.
-     * O número de iterações do Monte Carlo é parametrizado (não guardando estado interno).
+     * O método de cálculo é selecionável (Strategy Pattern) e o número de iterações é parametrizado.
      */
-    public SimulacaoResult execute(Integer limite, Integer iteracoes) {
+    public SimulacaoResult execute(Integer limite, Integer iteracoes, MetodoCalculo metodo) {
         List<Long> carteiraIds = carteiraRepository.findAllIds();
 
         if (carteiraIds.isEmpty())
@@ -56,16 +61,17 @@ public class ExecutarSimulacaoCargaUseCase {
 
         int total = carteiraIds.size();
         int cores = Runtime.getRuntime().availableProcessors();
+        MetodoCalculo metodoEscolhido = metodo != null ? metodo : MetodoCalculo.MONTE_CARLO;
         int totalIteracoes = (iteracoes != null && iteracoes > 0) ? iteracoes : this.iteracoesMonteCarloPadrao;
 
-        log.info(">>> INICIANDO CRONÔMETRO: Submetendo {} carteiras ({} iterações de Monte Carlo/carteira) ao executor de Virtual Threads...",
-                total, totalIteracoes);
+        log.info(">>> INICIANDO CRONÔMETRO: Submetendo {} carteiras (Método: {}, {} iterações) ao executor de Virtual Threads...",
+                total, metodoEscolhido, totalIteracoes);
         long inicio = System.currentTimeMillis();
 
         // Cria uma thread virtual em cada iteração. Cada virtual thread chama o execute
         List<Future<?>> futures = new ArrayList<>(total);
         for (Long carteiraId : carteiraIds)
-            futures.add(virtualThreadExecutor.submit(() -> processarCarteiraUseCase.execute(carteiraId, totalIteracoes)));
+            futures.add(virtualThreadExecutor.submit(() -> processarCarteiraUseCase.execute(carteiraId, totalIteracoes, metodoEscolhido)));
 
         // Aguarda a conclusão de todas as Virtual Threads
         for (Future<?> future : futures) {
@@ -89,14 +95,15 @@ public class ExecutarSimulacaoCargaUseCase {
                  🚀 SIMULAÇÃO DE CARGA CONCLUÍDA COM SUCESSO!
                 ================================================================================
                  📊 Total de Carteiras Processadas: %d
+                 🏷️  Método de Cálculo: %s
                  ⏱️  Tempo Total Decorrido: %d ms (%.2f s)
                  ⚡ Tempo Médio por Carteira: %.2f ms
                  🧠 Núcleos de CPU (Pool Fixo): %d
-                 🎲 Iterações de Monte Carlo por Carteira: %d
+                 🎲 Iterações Parametrizadas: %d
                  🧵 Gestão de I/O: %d Virtual Threads disparadas concorrentemente
                 ================================================================================
                 """,
-                total, tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, cores, totalIteracoes, total
+                total, metodoEscolhido, tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, cores, totalIteracoes, total
         );
 
         System.out.println(resumo);
@@ -108,6 +115,7 @@ public class ExecutarSimulacaoCargaUseCase {
                 tempoMedioPorCarteira,
                 cores,
                 totalIteracoes,
+                metodoEscolhido,
                 "Simulação massiva de concorrência concluída com sucesso."
         );
     }

@@ -11,7 +11,9 @@
 Projeto desenvolvido em **Java 21** e **Spring Boot 3** focado em demonstrar o uso avançado de concorrência com **Virtual Threads** e **Threads Tradicionais de Plataforma**, garantindo o isolamento estrito entre cargas de trabalho de **I/O** e **CPU**.
 Utiliza **PostgreSQL 16** via Docker em runtime e **H2 em memória** exclusivamente para a suíte de testes automatizados.
 
-O domínio do sistema é um **Simulador de Risco de Portfólios** simplificado, utilizando o método de **Monte Carlo (100.000 iterações por carteira)** para avaliar a volatilidade e risco de 1.000 carteiras de investimento em paralelo.
+O domínio do sistema é um **Simulador de Risco de Portfólios** simplificado, utilizando arquitetura orientada ao padrão **Strategy** para suportar múltiplos métodos de avaliação de risco:
+- **Monte Carlo (`MONTE_CARLO`):** Simulação estocástica de choques com 100.000 iterações por carteira geradas via `ThreadLocalRandom.current().nextGaussian()`.
+- **VaR Paramétrico (`VAR_PARAMETRICO`):** Cálculo analítico de Value at Risk com nível de confiança de 95% ($z = 1.645 \times \sqrt{\sum w_i^2 \sigma_i^2}$).
 
 ---
 
@@ -38,29 +40,31 @@ O domínio do sistema é um **Simulador de Risco de Portfólios** simplificado, 
                │     no H2       │                   │    no H2       │
                └────────┬────────┘                   └────────┬───────┘
                         │                                     │
-                        │ (2) Submete dados                   │ (3) Retorna risco
+                        │ (2) Submete dados à Estratégia      │ (3) Retorna risco
                         ▼                                     │
-        ┌─────────────────────────────────────────────────────────────┴──────────┐
+        ┌─────────────────────────────────────────────────────┴──────────────────┐
         │        GESTÃO DE CPU: Pool Fixo de Threads Tradicionais (Platform)     │
         │             Tamanho = Quantidade de núcleos da máquina                 │
-        │          Executa Monte Carlo (100.000 iterações matemáticas)           │
+        │       Executa Estratégia Selecionada (Monte Carlo ou VaR Paramétrico)  │
         └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 1. Gestão de I/O (Virtual Threads)
 - Para cada uma das 1.000 carteiras processadas, uma **Virtual Thread sob demanda** é disparada.
-- A Virtual Thread realiza a consulta no banco H2 para buscar os ativos associados à carteira.
+- A Virtual Thread realiza a consulta no banco para buscar os ativos associados à carteira.
 - Em seguida, despacha a tarefa de computação pesada para o Pool de CPU e aguarda o resultado (`Future.get()`).
 - Durante essa espera, a Virtual Thread é **suspensa (*unmounted*)** de sua *Carrier Thread*, liberando o núcleo do sistema operacional para continuar processando outras tarefas.
 - Quando o cálculo é finalizado, a Virtual Thread é **retomada (*remounted*)** e atualiza o banco de dados com o risco calculado.
 
-### 2. Gestão de CPU (Pool Fixo de Threads Nativas)
+### 2. Gestão de CPU (Pool Fixo de Threads Nativas & Strategy Pattern)
 - Pool de threads tradicionais configurado com tamanho fixo igual ao número de núcleos disponíveis na máquina:
   ```java
   int cores = Runtime.getRuntime().availableProcessors();
   Executors.newFixedThreadPool(cores, Thread.ofPlatform().name("cpu-worker-", 1).factory());
   ```
-- O pool recebe os ativos da carteira e executa um laço longo de **100.000 iterações** de simulação de choques de mercado gerando números aleatórios via `ThreadLocalRandom.current().nextGaussian()`.
+- **Padrão Strategy Dinâmico:** Todas as implementações de `CalculadoraRisco` são injetadas pelo Spring (`List<CalculadoraRisco>`) e roteadas dinamicamente:
+  - **Monte Carlo (`MonteCarloCalculadoraRiscoImpl`):** Executa um laço longo de **100.000 iterações** matemáticas de choque gaussiano saturando a CPU com simulações estatísticas.
+  - **VaR Paramétrico (`VarParametricoCalculadoraRiscoImpl`):** Executa a resolução analítica de risco de forma ultra veloz (~0.1 ms por carteira).
 - Garante saturação máxima dos núcleos físicos de processamento, **sem incorrer no custo excessivo de troca de contexto (*context switching*)** de criar milhares de threads nativas do SO.
 
 ---
@@ -103,7 +107,8 @@ com.example.threadswallet/
 │   │   ├── Carteira.java                        # Entidade / Agregado
 │   │   ├── Ativo.java                           # Entidade de Ativo
 │   │   ├── CarteiraRepository.java              # Interface de Repositório (DIP)
-│   │   └── CalculadoraRisco.java                # Interface de Cálculo de Risco (DIP)
+│   │   ├── CalculadoraRisco.java                # Interface de Cálculo de Risco (DIP)
+│   │   └── MetodoCalculo.java                   # Enum de Métodos de Cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
 │       └── DomainException.java                 # Exceções de Domínio
 ├── application/                                 # Casos de Uso e Orquestração
@@ -111,7 +116,7 @@ com.example.threadswallet/
 │   │   ├── SimulacaoResult.java                 # Métricas da simulação
 │   │   └── CarteiraDTO.java                     # DTO de leitura de carteira
 │   └── usecase/
-│       ├── ProcessarCarteiraUseCase.java        # Orquestração I/O -> CPU -> I/O
+│       ├── ProcessarCarteiraUseCase.java        # Orquestração I/O -> CPU -> I/O (com Strategy)
 │       ├── ExecutarSimulacaoCargaUseCase.java   # Disparo das 1.000 Virtual Threads
 │       ├── GerarMassaDadosUseCase.java          # Inserção em lote no banco
 │       └── ListarCarteirasUseCase.java          # Consulta de carteiras
@@ -120,7 +125,8 @@ com.example.threadswallet/
     │   ├── ConcurrencyConfig.java               # Configuração dos Executores (VT e CPU)
     │   └── OpenApiConfig.java                   # Configuração Swagger
     ├── calculation/
-    │   └── MonteCarloCalculadoraRiscoImpl.java  # Motor de Monte Carlo (100.000 iterações)
+    │   ├── MonteCarloCalculadoraRiscoImpl.java  # Motor de Monte Carlo (100.000 iterações)
+    │   └── VarParametricoCalculadoraRiscoImpl.java # Motor de VaR Paramétrico (Analítico 95%)
     ├── persistence/
     │   ├── CarteiraJpaEntity.java               # Entidade JPA Carteira
     │   ├── AtivoJpaEntity.java                  # Entidade JPA Ativo
@@ -207,10 +213,23 @@ O projeto inclui um teste automatizado ponta a ponta ([`SimuladorConcorrenciaInt
  🚀 SIMULAÇÃO DE CARGA CONCLUÍDA COM SUCESSO!
 ================================================================================
  📊 Total de Carteiras Processadas: 1000
- ⏱️  Tempo Total Decorrido: 17445 ms (17.45 s)
- ⚡ Tempo Médio por Carteira: 17.45 ms
+ 🏷️  Método de Cálculo: VAR_PARAMETRICO
+ ⏱️  Tempo Total Decorrido: 129 ms (0.13 s)
+ ⚡ Tempo Médio por Carteira: 0.13 ms
  🧠 Núcleos de CPU (Pool Fixo): 10
- 🎲 Iterações de Monte Carlo por Carteira: 100000
+ 🎲 Iterações Parametrizadas: 100000
+ 🧵 Gestão de I/O: 1000 Virtual Threads disparadas concorrentemente
+================================================================================
+
+================================================================================
+ 🚀 SIMULAÇÃO DE CARGA CONCLUÍDA COM SUCESSO!
+================================================================================
+ 📊 Total de Carteiras Processadas: 1000
+ 🏷️  Método de Cálculo: MONTE_CARLO
+ ⏱️  Tempo Total Decorrido: 17428 ms (17.43 s)
+ ⚡ Tempo Médio por Carteira: 17.43 ms
+ 🧠 Núcleos de CPU (Pool Fixo): 10
+ 🎲 Iterações Parametrizadas: 100000
  🧵 Gestão de I/O: 1000 Virtual Threads disparadas concorrentemente
 ================================================================================
 ```
@@ -232,18 +251,21 @@ Para garantir testes rápidos e sem acoplamentos desnecessários, o projeto defi
 
 | Método | Endpoint | Parâmetros | Descrição |
 |---|---|---|---|
-| `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a base de carteiras com 3 a 5 ativos cada no H2. |
-| `POST` | `/api/simulador/executar` | `limite` (opcional) | **Passo 2:** Dispara o cálculo concorrente para as carteiras cadastradas. Retorna erro 400 se a base estiver vazia. |
+| `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a base de carteiras com 3 a 5 ativos cada no banco. |
+| `POST` | `/api/simulador/executar` | `limite` (opcional)<br>`iteracoes` (padrão: 100000)<br>`metodo` (padrão: `MONTE_CARLO`, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se a base estiver vazia. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras e seus riscos calculados. |
 
 ### Exemplo de Disparo sob Demanda via cURL:
 
 ```bash
-# 1. Gerar a massa de 1.000 carteiras no H2
+# 1. Gerar a massa de 1.000 carteiras no banco
 curl -X POST "http://localhost:8080/api/simulador/massa-dados?totalCarteiras=1000&limparAntes=true"
 
-# 2. Disparar a simulação e o cálculo concorrente
-curl -X POST "http://localhost:8080/api/simulador/executar"
+# 2. Disparar a simulação e o cálculo concorrente com VaR Paramétrico
+curl -X POST "http://localhost:8080/api/simulador/executar?metodo=VAR_PARAMETRICO"
+
+# Ou disparar a simulação com Monte Carlo (100.000 iterações)
+curl -X POST "http://localhost:8080/api/simulador/executar?metodo=MONTE_CARLO&iteracoes=100000"
 
 # 3. Consultar as carteiras e riscos resultantes
 curl -X GET "http://localhost:8080/api/simulador/carteiras"
@@ -253,11 +275,12 @@ curl -X GET "http://localhost:8080/api/simulador/carteiras"
 ```json
 {
   "totalCarteirasProcessadas": 1000,
-  "tempoTotalMs": 17445,
-  "tempoTotalSegundos": 17.45,
-  "tempoMedioPorCarteiraMs": 17.45,
+  "metodoCalculo": "VAR_PARAMETRICO",
+  "tempoTotalMs": 129,
+  "tempoTotalSegundos": 0.13,
+  "tempoMedioPorCarteiraMs": 0.13,
   "nucleosCpuDisponiveis": 10,
-  "iteracoesMonteCarloPorCarteira": 100000,
+  "iteracoesParametrizadas": 100000,
   "mensagem": "Simulação massiva de concorrência concluída com sucesso."
 }
 ```

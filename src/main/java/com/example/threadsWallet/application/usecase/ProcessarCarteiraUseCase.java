@@ -3,36 +3,49 @@ package com.example.threadswallet.application.usecase;
 import com.example.threadswallet.domain.carteira.Ativo;
 import com.example.threadswallet.domain.carteira.CalculadoraRisco;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
+import com.example.threadswallet.domain.carteira.MetodoCalculo;
 import com.example.threadswallet.domain.exception.DomainException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Component
 public class ProcessarCarteiraUseCase {
 
     private final CarteiraRepository carteiraRepository;
-    private final CalculadoraRisco calculadoraRisco;
+    private final Map<MetodoCalculo, CalculadoraRisco> calculadoras;
     private final ExecutorService cpuThreadPool;
 
     public ProcessarCarteiraUseCase(
             CarteiraRepository carteiraRepository,
-            CalculadoraRisco calculadoraRisco,
+            List<CalculadoraRisco> calculadoras,
             @Qualifier("cpuThreadPool") ExecutorService cpuThreadPool
     ) {
         this.carteiraRepository = carteiraRepository;
-        this.calculadoraRisco = calculadoraRisco;
+        this.calculadoras = calculadoras.stream()
+                .collect(Collectors.toMap(CalculadoraRisco::getMetodo, Function.identity()));
         this.cpuThreadPool = cpuThreadPool;
     }
 
     /**
      * Executado dentro de uma Virtual Thread exclusiva.
      */
-    public Double execute(Long carteiraId, int iteracoes) {
+    public Double execute(Long carteiraId, int iteracoes, MetodoCalculo metodo) {
+        if (metodo == null)
+            throw new DomainException("O método de cálculo de risco é obrigatório.");
+
+        CalculadoraRisco calculadora = calculadoras.get(metodo);
+
+        if (calculadora == null)
+            throw new DomainException("Nenhuma calculadora de risco encontrada para o método: " + metodo);
+
         List<Ativo> ativos = carteiraRepository.findAtivosByCarteiraId(carteiraId);
 
         if (ativos.isEmpty())
@@ -41,8 +54,9 @@ public class ProcessarCarteiraUseCase {
         Double riscoCalculado;
         try {
             // A virtual thread chama uma thread de cpu do pool e essa thread roda o calcularRisco
-            Future<Double> futureCalculo = cpuThreadPool.submit(() -> calculadoraRisco.calcularRisco(ativos, iteracoes));
-            riscoCalculado = futureCalculo.get(); // Bloqueio barato na Virtual Thread
+            Future<Double> futureCalculo = cpuThreadPool.submit(() -> calculadora.calcularRisco(ativos, iteracoes));
+            // A virtual thread é bloqueada de forma barata e fica esperando a cpu thread terminar
+            riscoCalculado = futureCalculo.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Processamento da carteira " + carteiraId + " foi interrompido", e);

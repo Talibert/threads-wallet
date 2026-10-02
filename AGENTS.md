@@ -5,7 +5,9 @@ Este documento estabelece as diretrizes arquiteturais, padrões de concorrência
 O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetado para demonstrar e treinar conceitos avançados de **Concorrência Moderna**:
 - **Cargas de I/O (Banco de Dados / Rede):** Isoladas em **Virtual Threads** sob demanda (1 Virtual Thread por carteira processada).
 - **Cargas de Processamento (CPU-bound):** Isoladas em um **Pool Fixo de Threads Tradicionais de Plataforma**, limitado estritamente à quantidade de núcleos do processador da máquina (`Runtime.getRuntime().availableProcessors()`).
-- **Domínio:** **Simulador de Risco de Portfólios Simplificado** com o método de Monte Carlo (100.000 iterações por carteira).
+- **Domínio:** **Simulador de Risco de Portfólios Simplificado** com suporte a múltiplas estratégias via **Strategy Pattern**:
+  - **Monte Carlo (`MONTE_CARLO`):** Simulação estocástica de choques com 100.000 iterações por carteira.
+  - **VaR Paramétrico (`VAR_PARAMETRICO`):** Cálculo analítico de Value at Risk com nível de confiança de 95% ($z = 1.645 \times \sqrt{\sum w_i^2 \sigma_i^2}$).
 - **Persistência:** Spring Data JPA / Hibernate com **PostgreSQL 16** em runtime (configurado via `docker-compose.yml`) e **H2 em memória** exclusivamente para testes automatizados.
 - **Arquitetura:** Clean Architecture com guardrails automatizados via **ArchUnit**.
 
@@ -19,15 +21,19 @@ O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetad
 1. **Executor:** Configurado em [`ConcurrencyConfig`](file:///src/main/java/com/example/threadswallet/infra/config/ConcurrencyConfig.java) como `virtualThreadExecutor` utilizando `Executors.newThreadPerTaskExecutor(...)` com Virtual Threads nomeadas.
 2. **Ciclo de Vida por Carteira:**
    Para cada carteira processada, uma **Virtual Thread exclusiva** é disparada no [`ExecutarSimulacaoCargaUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ExecutarSimulacaoCargaUseCase.java) e orquestrada no [`ProcessarCarteiraUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCase.java):
-   - **Passo 1 (I/O - Leitura):** Consulta os ativos da carteira no banco de dados H2 (`findAtivosByCarteiraId`).
-   - **Passo 2 (Offload de CPU):** Submete os dados para o pool fixo de CPU (`cpuThreadPool.submit(...)`).
+   - **Passo 1 (I/O - Leitura):** Consulta os ativos da carteira no banco de dados (`findAtivosByCarteiraId`).
+   - **Passo 2 (Offload de CPU):** Submete a execução matemática da estratégia de risco selecionada para o pool fixo de CPU (`cpuThreadPool.submit(...)`).
    - **Passo 3 (Espera sem Bloqueio de SO):** Chama `future.get()`. A Virtual Thread é suspensa (*unmounted*) da *Carrier Thread*, liberando o núcleo do sistema operacional para outras tarefas.
    - **Passo 4 (I/O - Escrita):** Após a conclusão da matemática, a Virtual Thread é retomada (*remounted*) e atualiza o risco calculado no banco (`atualizarRisco`).
 
 ### 1.2. Gestão de CPU (Pool Fixo de Threads Tradicionais)
 1. **Executor:** Configurado em [`ConcurrencyConfig`](file:///src/main/java/com/example/threadswallet/infra/config/ConcurrencyConfig.java) como `cpuThreadPool` utilizando `Executors.newFixedThreadPool(cores)`.
 2. **Dimensionamento Estrito:** O tamanho do pool é igual a `Runtime.getRuntime().availableProcessors()`.
-3. **Simulação de Monte Carlo (Stateless):** Implementada em [`MonteCarloCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoImpl.java). A classe é **completamente stateless (não guarda estado interno)**. O número de iterações é fornecido **estritamente por parâmetro** (`calcularRisco(ativos, iteracoes)`). Executa o laço gerando choques gaussianos aleatórios via `ThreadLocalRandom.current()` para simular volatilidade e esgotar a CPU de forma controlada, sem context-switching destrutivo no SO.
+3. **Estratégias de Cálculo (Stateless - Strategy Pattern):**
+   - Ambas as implementações de [`CalculadoraRisco`](file:///src/main/java/com/example/threadswallet/domain/carteira/CalculadoraRisco.java) são **completamente stateless (não guardam estado interno)**.
+   - **Monte Carlo ([`MonteCarloCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoImpl.java)):** Executa o laço gerando choques gaussianos aleatórios via `ThreadLocalRandom.current()` para simular volatilidade e esgotar a CPU de forma controlada.
+   - **VaR Paramétrico ([`VarParametricoCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/VarParametricoCalculadoraRiscoImpl.java)):** Executa a fórmula analítica de variância-covariância sob distribuição normal para VaR 95%.
+   - **Injeção de Estratégias via Spring:** O Spring injeta automaticamente todas as implementações (`List<CalculadoraRisco>`) no [`ProcessarCarteiraUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCase.java), que indexa as estratégias em um mapa imutável por [`MetodoCalculo`](file:///src/main/java/com/example/threadswallet/domain/carteira/MetodoCalculo.java).
 
 ---
 
@@ -101,7 +107,8 @@ com.example.threadswallet/
 │   │   ├── Carteira.java                        # Agregado da carteira
 │   │   ├── Ativo.java                           # Entidade do ativo
 │   │   ├── CarteiraRepository.java              # Interface de persistência (DIP)
-│   │   └── CalculadoraRisco.java                # Interface para o cálculo de risco (DIP)
+│   │   ├── CalculadoraRisco.java                # Interface para o cálculo de risco (DIP)
+│   │   └── MetodoCalculo.java                   # Enum de métodos de cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
 │       └── DomainException.java                 # Exceção pura de negócio
 ├── application/                                 # Orquestração de Casos de Uso
@@ -109,7 +116,7 @@ com.example.threadswallet/
 │   │   ├── SimulacaoResult.java                 # Resultado e métricas da simulação
 │   │   └── CarteiraDTO.java                     # DTO de leitura de carteira
 │   └── usecase/
-│       ├── ProcessarCarteiraUseCase.java        # Fluxo I/O -> CPU -> I/O da carteira
+│       ├── ProcessarCarteiraUseCase.java        # Fluxo I/O -> CPU -> I/O da carteira (com Strategy)
 │       ├── ExecutarSimulacaoCargaUseCase.java   # Disparo concorrente de 1.000 Virtual Threads
 │       ├── GerarMassaDadosUseCase.java          # Geração em lote de 1.000 carteiras no H2
 │       └── ListarCarteirasUseCase.java          # Consulta de carteiras e riscos
@@ -118,7 +125,8 @@ com.example.threadswallet/
     │   ├── ConcurrencyConfig.java               # Configuração dos pools de threads
     │   └── OpenApiConfig.java                   # Documentação Swagger
     ├── calculation/
-    │   └── MonteCarloCalculadoraRiscoImpl.java  # Motor CPU Monte Carlo (100k iterações)
+    │   ├── MonteCarloCalculadoraRiscoImpl.java  # Motor CPU Monte Carlo (100k iterações)
+    │   └── VarParametricoCalculadoraRiscoImpl.java # Motor CPU VaR Paramétrico (Analítico 95%)
     ├── persistence/
     │   ├── CarteiraJpaEntity.java               # Entidade JPA da tabela carteira
     │   ├── AtivoJpaEntity.java                  # Entidade JPA da tabela ativo
@@ -204,7 +212,7 @@ Com a aplicação rodando (`./mvnw spring-boot:run` com o PostgreSQL do `docker-
 | Método | Endpoint | Parâmetros | Descrição |
 |---|---|---|---|
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a massa de carteiras com 3 a 5 ativos cada no banco. |
-| `POST` | `/api/simulador/executar` | `limite` (opcional) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas. Retorna erro 400 se a base estiver vazia. |
+| `POST` | `/api/simulador/executar` | `limite` (opcional)<br>`iteracoes` (padrão: 100000)<br>`metodo` (padrão: `MONTE_CARLO`, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se a base estiver vazia. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras cadastradas e seus riscos calculados. |
 
 ---

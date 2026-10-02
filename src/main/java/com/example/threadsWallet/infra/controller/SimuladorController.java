@@ -1,6 +1,7 @@
 package com.example.threadswallet.infra.controller;
 
 import com.example.threadswallet.application.dto.SimulacaoResult;
+import com.example.threadswallet.domain.carteira.MetodoCalculo;
 import com.example.threadswallet.application.usecase.ExecutarSimulacaoCargaUseCase;
 import com.example.threadswallet.application.usecase.GerarMassaDadosUseCase;
 import com.example.threadswallet.application.usecase.ListarCarteirasUseCase;
@@ -56,7 +57,7 @@ public class SimuladorController {
 
     @Operation(
             summary = "2. Calcular risco das carteiras cadastradas",
-            description = "Dispara o cálculo de risco concorrente apenas para as carteiras já presentes no banco. Para cada carteira, uma Virtual Thread exclusiva busca os ativos, despacha o cálculo de Monte Carlo (com iterações passadas por parâmetro) para o Pool de CPU e atualiza o risco no banco."
+            description = "Dispara o cálculo de risco concorrente apenas para as carteiras já presentes no banco. Permite selecionar a estratégia de cálculo: MONTE_CARLO (simulação intensiva de CPU) ou VAR_PARAMETRICO (método analítico de variância-covariância)."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cálculo concluído com sucesso"),
@@ -68,9 +69,11 @@ public class SimuladorController {
             @Parameter(description = "Limite opcional de carteiras a processar (se omitido, processa todas as cadastradas)", example = "1000")
             @RequestParam(required = false) Integer limite,
             @Parameter(description = "Número opcional de iterações do Monte Carlo por carteira (padrão: 100000)", example = "100000")
-            @RequestParam(required = false) Integer iteracoes
+            @RequestParam(required = false) Integer iteracoes,
+            @Parameter(description = "Método de cálculo: MONTE_CARLO ou VAR_PARAMETRICO (padrão: MONTE_CARLO)", example = "MONTE_CARLO")
+            @RequestParam(required = false, defaultValue = "MONTE_CARLO") MetodoCalculo metodo
     ) {
-        SimulacaoResult result = executarSimulacaoCargaUseCase.execute(limite, iteracoes);
+        SimulacaoResult result = executarSimulacaoCargaUseCase.execute(limite, iteracoes, metodo);
         return ResponseEntity.ok(SimulacaoResponse.from(result));
     }
 

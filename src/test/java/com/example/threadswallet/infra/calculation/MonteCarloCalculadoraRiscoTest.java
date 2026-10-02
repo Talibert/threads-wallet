@@ -17,6 +17,12 @@ class MonteCarloCalculadoraRiscoTest extends UnitAbstractTests {
     private MonteCarloCalculadoraRiscoImpl calculadora;
 
     @Test
+    @DisplayName("Deve identificar corretamente o método como MONTE_CARLO")
+    void deveRetornarMetodoMonteCarlo() {
+        assertEquals(com.example.threadswallet.domain.carteira.MetodoCalculo.MONTE_CARLO, calculadora.getMetodo());
+    }
+
+    @Test
     @DisplayName("Deve calcular risco de portfólio usando Monte Carlo com iterações por parâmetro")
     void deveCalcularRiscoMonteCarlo() {
         List<Ativo> ativos = List.of(

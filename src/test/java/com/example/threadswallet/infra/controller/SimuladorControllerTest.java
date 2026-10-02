@@ -3,6 +3,7 @@ package com.example.threadswallet.infra.controller;
 import com.example.threadswallet.ControllerAbstractTests;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
 import com.example.threadswallet.infra.calculation.MonteCarloCalculadoraRiscoImpl;
+import com.example.threadswallet.infra.calculation.VarParametricoCalculadoraRiscoImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,9 @@ class SimuladorControllerTest extends ControllerAbstractTests {
 
     @MockitoSpyBean
     private MonteCarloCalculadoraRiscoImpl calculadoraRisco;
+
+    @MockitoSpyBean
+    private VarParametricoCalculadoraRiscoImpl parametricoCalculadora;
 
     @BeforeEach
     void setUp() {
@@ -52,7 +56,7 @@ class SimuladorControllerTest extends ControllerAbstractTests {
     }
 
     @Test
-    @DisplayName("Fluxo completo sob demanda: Gerar via controller e depois calcular via controller verificando SpyBean")
+    @DisplayName("Fluxo completo sob demanda: Gerar via controller e depois calcular via Monte Carlo")
     void deveExecutarFluxoCompletoViaApi() throws Exception {
         // 1. Gera massa via controller
         mockMvc.perform(post("/api/simulador/massa-dados")
@@ -64,19 +68,39 @@ class SimuladorControllerTest extends ControllerAbstractTests {
         mockMvc.perform(post("/api/simulador/executar")
                         .param("limite", "10")
                         .param("iteracoes", "5000")
+                        .param("metodo", "MONTE_CARLO")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalCarteirasProcessadas").value(10))
                 .andExpect(jsonPath("$.tempoTotalMs").isNumber())
                 .andExpect(jsonPath("$.nucleosCpuDisponiveis").isNumber())
-                .andExpect(jsonPath("$.iteracoesMonteCarloPorCarteira").value(5000));
+                .andExpect(jsonPath("$.iteracoesMonteCarloPorCarteira").value(5000))
+                .andExpect(jsonPath("$.metodoCalculo").value("MONTE_CARLO"));
 
-        // 3. Verifica via Mockito que o SpyBean da calculadora foi chamado com as 5.000 iterações
+        // 3. Verifica via Mockito que o SpyBean da calculadora Monte Carlo foi chamado com 5.000 iterações
         verify(calculadoraRisco, atLeastOnce()).calcularRisco(anyList(), org.mockito.ArgumentMatchers.eq(5000));
 
         // 4. Consulta lista de carteiras
         mockMvc.perform(get("/api/simulador/carteiras"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(10));
+    }
+
+    @Test
+    @DisplayName("POST /api/simulador/executar com metodo=VAR_PARAMETRICO deve acionar a estratégia analítica")
+    void deveExecutarViaApiComVarParametrico() throws Exception {
+        mockMvc.perform(post("/api/simulador/massa-dados")
+                        .param("totalCarteiras", "5")
+                        .param("limparAntes", "true"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/simulador/executar")
+                        .param("metodo", "VAR_PARAMETRICO")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalCarteirasProcessadas").value(5))
+                .andExpect(jsonPath("$.metodoCalculo").value("VAR_PARAMETRICO"));
+
+        verify(parametricoCalculadora, atLeastOnce()).calcularRisco(anyList(), anyInt());
     }
 }

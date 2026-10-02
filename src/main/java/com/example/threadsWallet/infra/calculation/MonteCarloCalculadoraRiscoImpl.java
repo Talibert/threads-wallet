@@ -2,6 +2,7 @@ package com.example.threadswallet.infra.calculation;
 
 import com.example.threadswallet.domain.carteira.Ativo;
 import com.example.threadswallet.domain.carteira.CalculadoraRisco;
+import com.example.threadswallet.domain.carteira.MetodoCalculo;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -67,5 +68,10 @@ public class MonteCarloCalculadoraRiscoImpl implements CalculadoraRisco {
         double riscoVaR95 = 1.645 * desvioPadrao;
 
         return Math.round(riscoVaR95 * 10000.0) / 10000.0;
+    }
+
+    @Override
+    public MetodoCalculo getMetodo() {
+        return MetodoCalculo.MONTE_CARLO;
     }
 }
