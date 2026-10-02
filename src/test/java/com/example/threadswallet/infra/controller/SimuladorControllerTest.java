@@ -103,4 +103,19 @@ class SimuladorControllerTest extends ControllerAbstractTests {
 
         verify(parametricoCalculadora, atLeastOnce()).calcularRisco(anyList(), anyInt());
     }
+
+    @Test
+    @DisplayName("POST /api/simulador/executar sem metodo deve retornar HTTP 400 Bad Request")
+    void deveRetornar400QuandoMetodoNaoInformado() throws Exception {
+        mockMvc.perform(post("/api/simulador/massa-dados")
+                        .param("totalCarteiras", "1")
+                        .param("limparAntes", "true"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/simulador/executar")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Erro de Domínio"))
+                .andExpect(jsonPath("$.message").value("O método de cálculo de risco é obrigatório."));
+    }
 }

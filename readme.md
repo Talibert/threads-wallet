@@ -252,7 +252,7 @@ Para garantir testes rápidos e sem acoplamentos desnecessários, o projeto defi
 | Método | Endpoint | Parâmetros | Descrição |
 |---|---|---|---|
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a base de carteiras com 3 a 5 ativos cada no banco. |
-| `POST` | `/api/simulador/executar` | `limite` (opcional)<br>`iteracoes` (padrão: 100000)<br>`metodo` (padrão: `MONTE_CARLO`, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se a base estiver vazia. |
+| `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras e seus riscos calculados. |
 
 ### Exemplo de Disparo sob Demanda via cURL:

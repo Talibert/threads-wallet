@@ -65,7 +65,7 @@ class ExecutarSimulacaoCargaUseCaseTest extends UnitAbstractTests {
         when(processarCarteiraUseCase.execute(anyLong(), anyInt(), any(MetodoCalculo.class))).thenReturn(0.15);
 
         int iteracoesCustom = 5000;
-        SimulacaoResult resultado = useCase.execute(null, iteracoesCustom);
+        SimulacaoResult resultado = useCase.execute(null, iteracoesCustom, MetodoCalculo.MONTE_CARLO);
 
         assertNotNull(resultado);
         assertEquals(3, resultado.totalCarteirasProcessadas());
@@ -95,11 +95,22 @@ class ExecutarSimulacaoCargaUseCaseTest extends UnitAbstractTests {
     }
 
     @Test
+    @DisplayName("Deve lançar DomainException quando o método de cálculo não for informado")
+    void deveLancarExcecaoQuandoMetodoCalculoNulo() {
+        DomainException exception = assertThrows(DomainException.class,
+                () -> useCase.execute(null, 1000, null));
+
+        assertEquals("O método de cálculo de risco é obrigatório.", exception.getMessage());
+        verifyNoInteractions(carteiraRepository);
+        verifyNoInteractions(processarCarteiraUseCase);
+    }
+
+    @Test
     @DisplayName("Deve lançar DomainException quando não houver nenhuma carteira no repositório")
     void deveLancarExcecaoQuandoBaseVazia() {
         when(carteiraRepository.findAllIds()).thenReturn(List.of());
 
-        assertThrows(DomainException.class, () -> useCase.execute(null));
+        assertThrows(DomainException.class, () -> useCase.execute(null, null, MetodoCalculo.MONTE_CARLO));
 
         verifyNoInteractions(processarCarteiraUseCase);
     }

@@ -36,7 +36,7 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         assertEquals(totalCarteiras, geradas);
 
         // 2. Dispara o cálculo concorrente sobre as carteiras existentes com Monte Carlo
-        SimulacaoResult resultado = simulacaoUseCase.execute(totalCarteiras);
+        SimulacaoResult resultado = simulacaoUseCase.execute(totalCarteiras, null, MetodoCalculo.MONTE_CARLO);
 
         // Validações dos resultados
         assertNotNull(resultado);
