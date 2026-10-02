@@ -70,8 +70,8 @@ public class SimuladorController {
             @RequestParam(required = false) Integer limite,
             @Parameter(description = "Número opcional de iterações do Monte Carlo por carteira (padrão: 100000)", example = "100000")
             @RequestParam(required = false) Integer iteracoes,
-            @Parameter(description = "Método de cálculo: MONTE_CARLO ou VAR_PARAMETRICO (padrão: MONTE_CARLO)", example = "MONTE_CARLO")
-            @RequestParam(required = false, defaultValue = "MONTE_CARLO") MetodoCalculo metodo
+            @Parameter(description = "Método de cálculo obrigatório: MONTE_CARLO ou VAR_PARAMETRICO", example = "MONTE_CARLO", required = true)
+            @RequestParam(required = false) MetodoCalculo metodo
     ) {
         SimulacaoResult result = executarSimulacaoCargaUseCase.execute(limite, iteracoes, metodo);
         return ResponseEntity.ok(SimulacaoResponse.from(result));

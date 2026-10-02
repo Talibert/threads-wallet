@@ -38,19 +38,15 @@ public class ExecutarSimulacaoCargaUseCase {
         this.iteracoesMonteCarloPadrao = iteracoesMonteCarloPadrao;
     }
 
-    public SimulacaoResult execute(Integer limite) {
-        return execute(limite, null, MetodoCalculo.MONTE_CARLO);
-    }
-
-    public SimulacaoResult execute(Integer limite, Integer iteracoes) {
-        return execute(limite, iteracoes, MetodoCalculo.MONTE_CARLO);
-    }
-
     /**
      * Executa o cálculo de risco concorrente apenas para carteiras já cadastradas na base.
-     * O método de cálculo é selecionável (Strategy Pattern) e o número de iterações é parametrizado.
+     * O método de cálculo é obrigatório (Strategy Pattern) e o número de iterações é parametrizado.
      */
     public SimulacaoResult execute(Integer limite, Integer iteracoes, MetodoCalculo metodo) {
+        if (metodo == null) {
+            throw new DomainException("O método de cálculo de risco é obrigatório.");
+        }
+
         List<Long> carteiraIds = carteiraRepository.findAllIds();
 
         if (carteiraIds.isEmpty())
@@ -61,17 +57,16 @@ public class ExecutarSimulacaoCargaUseCase {
 
         int total = carteiraIds.size();
         int cores = Runtime.getRuntime().availableProcessors();
-        MetodoCalculo metodoEscolhido = metodo != null ? metodo : MetodoCalculo.MONTE_CARLO;
         int totalIteracoes = (iteracoes != null && iteracoes > 0) ? iteracoes : this.iteracoesMonteCarloPadrao;
 
         log.info(">>> INICIANDO CRONÔMETRO: Submetendo {} carteiras (Método: {}, {} iterações) ao executor de Virtual Threads...",
-                total, metodoEscolhido, totalIteracoes);
+                total, metodo, totalIteracoes);
         long inicio = System.currentTimeMillis();
 
         // Cria uma thread virtual em cada iteração. Cada virtual thread chama o execute
         List<Future<?>> futures = new ArrayList<>(total);
         for (Long carteiraId : carteiraIds)
-            futures.add(virtualThreadExecutor.submit(() -> processarCarteiraUseCase.execute(carteiraId, totalIteracoes, metodoEscolhido)));
+            futures.add(virtualThreadExecutor.submit(() -> processarCarteiraUseCase.execute(carteiraId, totalIteracoes, metodo)));
 
         // Aguarda a conclusão de todas as Virtual Threads
         for (Future<?> future : futures) {
@@ -103,7 +98,7 @@ public class ExecutarSimulacaoCargaUseCase {
                  🧵 Gestão de I/O: %d Virtual Threads disparadas concorrentemente
                 ================================================================================
                 """,
-                total, metodoEscolhido, tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, cores, totalIteracoes, total
+                total, metodo, tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, cores, totalIteracoes, total
         );
 
         System.out.println(resumo);
@@ -115,7 +110,7 @@ public class ExecutarSimulacaoCargaUseCase {
                 tempoMedioPorCarteira,
                 cores,
                 totalIteracoes,
-                metodoEscolhido,
+                metodo,
                 "Simulação massiva de concorrência concluída com sucesso."
         );
     }
