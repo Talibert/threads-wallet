@@ -11,6 +11,8 @@ public interface CarteiraRepository {
 
     Optional<Carteira> findById(Long id);
 
+    boolean existsById(Long id);
+
     List<Ativo> findAtivosByCarteiraId(Long carteiraId);
 
     void atualizarRisco(Long carteiraId, Double riscoCalculado);

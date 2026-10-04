@@ -18,7 +18,7 @@ class ArquivoUploadTest extends UnitAbstractTests {
     @Test
     @DisplayName("Deve instanciar ArquivoUpload com sucesso para arquivo CSV")
     void deveInstanciarComSucessoParaCsv() {
-        byte[] conteudo = "1;PETR4;38.50;0.22".getBytes();
+        byte[] conteudo = "PETR4;38.50;0.22".getBytes();
         MockMultipartFile file = new MockMultipartFile("arquivo", "ativos.csv", "text/csv", conteudo);
 
         ArquivoUpload upload = ArquivoUpload.from(file);

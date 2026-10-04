@@ -102,4 +102,12 @@ class CarteiraRepositoryTest extends RepositoryAbstractTests {
         assertThat(carteiraRepository.count()).isZero();
         assertThat(carteiraRepository.findAll()).isEmpty();
     }
+
+    @Test
+    @DisplayName("Deve verificar existência por ID via existsById")
+    void deveVerificarExistenciaPorId() {
+        Carteira salva = carteiraRepository.save(Carteira.create("Cliente Exists"));
+        assertThat(carteiraRepository.existsById(salva.getId())).isTrue();
+        assertThat(carteiraRepository.existsById(999999L)).isFalse();
+    }
 }

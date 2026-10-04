@@ -106,7 +106,8 @@ com.example.threadswallet/
 │   ├── carteira/
 │   │   ├── Carteira.java                        # Agregado da carteira
 │   │   ├── Ativo.java                           # Entidade do ativo
-│   │   ├── CarteiraRepository.java              # Interface de persistência (DIP)
+│   │   ├── CarteiraRepository.java              # Interface de persistência da carteira (DIP)
+│   │   ├── AtivoRepository.java                 # Interface de persistência do ativo (DIP)
 │   │   ├── CalculadoraRisco.java                # Interface para o cálculo de risco (DIP)
 │   │   └── MetodoCalculo.java                   # Enum de métodos de cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
@@ -114,12 +115,14 @@ com.example.threadswallet/
 ├── application/                                 # Orquestração de Casos de Uso
 │   ├── dto/
 │   │   ├── SimulacaoResult.java                 # Resultado e métricas da simulação
-│   │   └── CarteiraDTO.java                     # DTO de leitura de carteira
+│   │   ├── CarteiraDTO.java                     # DTO de leitura de carteira
+│   │   └── ProcessamentoAtivosResult.java       # Resultado do processamento de ativos
 │   └── usecase/
 │       ├── ProcessarCarteiraUseCase.java        # Fluxo I/O -> CPU -> I/O da carteira (com Strategy)
 │       ├── ExecutarSimulacaoCargaUseCase.java   # Disparo concorrente de 1.000 Virtual Threads
 │       ├── GerarMassaDadosUseCase.java          # Geração em lote de 1.000 carteiras no H2
-│       └── ListarCarteirasUseCase.java          # Consulta de carteiras e riscos
+│       ├── ListarCarteirasUseCase.java          # Consulta de carteiras e riscos
+│       └── ProcessarArquivoAtivosUseCase.java   # Ingestão e gravação de ativos em lotes via Virtual Thread
 └── infra/                                       # Adaptadores Tecnológicos
     ├── config/
     │   ├── ConcurrencyConfig.java               # Configuração dos pools de threads
@@ -132,12 +135,16 @@ com.example.threadswallet/
     │   ├── AtivoJpaEntity.java                  # Entidade JPA da tabela ativo
     │   ├── CarteiraJpaRepository.java           # Spring Data JPA da carteira
     │   ├── AtivoJpaRepository.java              # Spring Data JPA do ativo
-    │   └── CarteiraRepositoryImpl.java          # Implementação de CarteiraRepository
+    │   ├── CarteiraRepositoryImpl.java          # Implementação de CarteiraRepository
+    │   └── AtivoRepositoryImpl.java             # Implementação de AtivoRepository
     ├── controller/
     │   ├── SimuladorController.java             # Endpoints REST para teste e consulta
+    │   ├── UploadAtivoController.java           # Endpoint REST de ingestão de ativos por carteira
     │   └── dto/
     │       ├── SimulacaoResponse.java           # Envelope de resposta HTTP
-    │       └── CarteiraResponse.java            # DTO de resposta de carteira
+    │       ├── CarteiraResponse.java            # DTO de resposta de carteira
+    │       ├── ArquivoUpload.java               # Encapsulamento e validação de upload multipart
+    │       └── UploadArquivoResponse.java       # Resposta HTTP de upload
     ├── tools/
     │   └── DBInstall.java                       # Gerador autônomo de DDL para Migrations Flyway
     └── exception/
@@ -188,18 +195,18 @@ O projeto adota uma taxonomia estrita para tempo de execução e isolamento de t
 - **Unitários ([`UnitAbstractTests`](file:///src/test/java/com/example/threadswallet/UnitAbstractTests.java)):**
   - Configuração: [`application-test-unit.properties`](file:///src/test/resources/application-test-unit.properties).
   - Escopo: **Zero Spring Context e zero banco de dados**. Execução instantânea via JUnit 5 e Mockito.
-  - Implementações: [`CarteiraTest`](file:///src/test/java/com/example/threadswallet/domain/carteira/CarteiraTest.java), [`MonteCarloCalculadoraRiscoTest`](file:///src/test/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoTest.java), [`ProcessarCarteiraUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCaseTest.java), [`ExecutarSimulacaoCargaUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ExecutarSimulacaoCargaUseCaseTest.java), [`DBInstallTest`](file:///src/test/java/com/example/threadswallet/infra/tools/DBInstallTest.java).
+  - Implementações: [`CarteiraTest`](file:///src/test/java/com/example/threadswallet/domain/carteira/CarteiraTest.java), [`MonteCarloCalculadoraRiscoTest`](file:///src/test/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoTest.java), [`ProcessarCarteiraUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCaseTest.java), [`ExecutarSimulacaoCargaUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ExecutarSimulacaoCargaUseCaseTest.java), [`ProcessarArquivoAtivosUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarArquivoAtivosUseCaseTest.java), [`ArquivoUploadTest`](file:///src/test/java/com/example/threadswallet/infra/controller/dto/ArquivoUploadTest.java), [`DBInstallTest`](file:///src/test/java/com/example/threadswallet/infra/tools/DBInstallTest.java).
 - **Repositório ([`RepositoryAbstractTests`](file:///src/test/java/com/example/threadswallet/RepositoryAbstractTests.java)):**
   - Configuração: [`application-test-repository.properties`](file:///src/test/resources/application-test-repository.properties).
   - Escopo: `@DataJpaTest`, carrega **exclusivamente a camada de persistência** (JPA/Hibernate) e o banco de dados H2 com migrations via Flyway.
-  - Implementações: [`CarteiraRepositoryTest`](file:///src/test/java/com/example/threadswallet/infra/persistence/CarteiraRepositoryTest.java), [`FlywayMigrationTest`](file:///src/test/java/com/example/threadswallet/infra/persistence/FlywayMigrationTest.java).
+  - Implementações: [`CarteiraRepositoryTest`](file:///src/test/java/com/example/threadswallet/infra/persistence/CarteiraRepositoryTest.java), [`AtivoRepositoryTest`](file:///src/test/java/com/example/threadswallet/infra/persistence/AtivoRepositoryTest.java), [`FlywayMigrationTest`](file:///src/test/java/com/example/threadswallet/infra/persistence/FlywayMigrationTest.java).
 - **Integração ([`IntegrationAbstractTests`](file:///src/test/java/com/example/threadswallet/IntegrationAbstractTests.java)):**
   - Configuração: [`application-test-integration.properties`](file:///src/test/resources/application-test-integration.properties).
   - Escopo: `@SpringBootTest`, **sobe o contexto completo** da aplicação (pools de threads nativas e virtuais, banco e beans).
   - Implementações: [`SimuladorConcorrenciaIntegrationTest`](file:///src/test/java/com/example/threadswallet/integration/SimuladorConcorrenciaIntegrationTest.java).
 - **Controllers ([`ControllerAbstractTests`](file:///src/test/java/com/example/threadswallet/ControllerAbstractTests.java)):**
   - Herda de `IntegrationAbstractTests` e configura `@AutoConfigureMockMvc` para simulação HTTP sem subir porta de rede.
-  - Implementações: [`SimuladorControllerTest`](file:///src/test/java/com/example/threadswallet/infra/controller/SimuladorControllerTest.java).
+  - Implementações: [`SimuladorControllerTest`](file:///src/test/java/com/example/threadswallet/infra/controller/SimuladorControllerTest.java), [`UploadAtivoControllerTest`](file:///src/test/java/com/example/threadswallet/infra/controller/UploadAtivoControllerTest.java).
 
 ---
 
@@ -214,7 +221,7 @@ Com a aplicação rodando (`./mvnw spring-boot:run` com o PostgreSQL do `docker-
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a massa de carteiras com 3 a 5 ativos cada no banco. |
 | `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras cadastradas e seus riscos calculados. |
-| `POST` | `/api/ativos/upload` | `arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos:** Recebe e valida arquivos de ativos na borda HTTP (rejeita arquivos vazios ou com extensões diferentes de `.csv`/`.txt`). |
+| `POST` | `/api/carteiras/{carteiraId}/ativos/upload` | `carteiraId` (Path, ID da carteira)<br>`arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos por Carteira:** Recebe arquivo de ativos e associa todos à carteira indicada no path, salvando em lotes atômicos. Rejeita arquivos vazios, formatos inválidos ou carteiras inexistentes (400). |
 
 ---
 

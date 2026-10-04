@@ -16,13 +16,15 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
     private final CarteiraJpaRepository carteiraJpaRepository;
     private final AtivoJpaRepository ativoJpaRepository;
 
-    public CarteiraRepositoryImpl(CarteiraJpaRepository carteiraJpaRepository, AtivoJpaRepository ativoJpaRepository) {
+    public CarteiraRepositoryImpl(
+            CarteiraJpaRepository carteiraJpaRepository,
+            AtivoJpaRepository ativoJpaRepository
+    ) {
         this.carteiraJpaRepository = carteiraJpaRepository;
         this.ativoJpaRepository = ativoJpaRepository;
     }
 
     @Override
-    @Transactional
     public Carteira save(Carteira domain) {
         CarteiraJpaEntity jpaEntity = toJpaEntity(domain);
         CarteiraJpaEntity saved = carteiraJpaRepository.save(jpaEntity);
@@ -30,7 +32,6 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
     }
 
     @Override
-    @Transactional
     public List<Carteira> saveAll(List<Carteira> carteiras) {
         List<CarteiraJpaEntity> entities = carteiras.stream()
                 .map(this::toJpaEntity)
@@ -50,7 +51,11 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    public boolean existsById(Long id) {
+        return carteiraJpaRepository.existsById(id);
+    }
+
+    @Override
     public List<Ativo> findAtivosByCarteiraId(Long carteiraId) {
         return ativoJpaRepository.findByCarteiraId(carteiraId).stream()
                 .map(this::toDomainAtivo)
@@ -58,13 +63,11 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
     }
 
     @Override
-    @Transactional
     public void atualizarRisco(Long carteiraId, Double riscoCalculado) {
         carteiraJpaRepository.atualizarRisco(carteiraId, riscoCalculado);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Long> findAllIds() {
         return carteiraJpaRepository.findAllIds();
     }
@@ -78,13 +81,11 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public long count() {
         return carteiraJpaRepository.count();
     }
 
     @Override
-    @Transactional
     public void deleteAll() {
         carteiraJpaRepository.deleteAll();
     }
