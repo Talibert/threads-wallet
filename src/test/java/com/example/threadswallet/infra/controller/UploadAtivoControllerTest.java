@@ -27,7 +27,9 @@ class UploadAtivoControllerTest extends ControllerAbstractTests {
                 .andExpect(jsonPath("$.nomeArquivo").value("carteira_ativos.csv"))
                 .andExpect(jsonPath("$.extensao").value("csv"))
                 .andExpect(jsonPath("$.tamanhoBytes").value(conteudo.length))
-                .andExpect(jsonPath("$.mensagem").value("Arquivo recebido com sucesso e validado. Pronto para processamento."));
+                .andExpect(jsonPath("$.totalAtivosProcessados").value(2))
+                .andExpect(jsonPath("$.tempoProcessamentoMs").isNumber())
+                .andExpect(jsonPath("$.mensagem").value("2 ativos processados e instanciados com sucesso."));
     }
 
     @Test
@@ -45,7 +47,9 @@ class UploadAtivoControllerTest extends ControllerAbstractTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.nomeArquivo").value("lote_ativos.txt"))
                 .andExpect(jsonPath("$.extensao").value("txt"))
-                .andExpect(jsonPath("$.tamanhoBytes").value(conteudo.length));
+                .andExpect(jsonPath("$.tamanhoBytes").value(conteudo.length))
+                .andExpect(jsonPath("$.totalAtivosProcessados").value(2))
+                .andExpect(jsonPath("$.tempoProcessamentoMs").isNumber());
     }
 
     @Test
