@@ -2,6 +2,7 @@ package com.example.threadswallet.infra.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -12,6 +13,14 @@ import java.util.concurrent.Executors;
 public class ConcurrencyConfig {
 
     private static final Logger log = LoggerFactory.getLogger(ConcurrencyConfig.class);
+
+    private final int threadsReservadas;
+
+    public ConcurrencyConfig(
+            @Value("${simulador.cpu-pool.threads-reservadas:2}") int threadsReservadas
+    ) {
+        this.threadsReservadas = threadsReservadas;
+    }
 
     /**
      * Pool de Virtual Threads para gestão de I/O (banco de dados, rede).
@@ -28,15 +37,17 @@ public class ConcurrencyConfig {
 
     /**
      * Pool de Threads Tradicionais (Platform Threads) de tamanho fixo para cargas de CPU.
-     * Limitado estritamente à quantidade de núcleos do processador da máquina hospedeira.
+     * Dimensionado reservando núcleos para o SO, JVM (Garbage Collector e JIT) e Carrier Threads de I/O.
      * Evita context switching excessivo e saturação descontrolada dos núcleos da CPU.
      */
     @Bean(name = "cpuThreadPool", destroyMethod = "close")
     public ExecutorService cpuThreadPool() {
-        int cores = Runtime.getRuntime().availableProcessors();
-        log.info("🧠 [CONCORRÊNCIA] Inicializando Pool Fixo de CPU com {} threads nativas (1 por núcleo)...", cores);
+        int totalCores = Runtime.getRuntime().availableProcessors();
+        int poolSize = Math.max(1, totalCores - threadsReservadas);
+        log.info("🧠 [CONCORRÊNCIA] Inicializando Pool Fixo de CPU com {} threads nativas (total da máquina: {}, {} reservadas para SO/JVM/I/O)...",
+                poolSize, totalCores, threadsReservadas);
         return Executors.newFixedThreadPool(
-                cores,
+                poolSize,
                 Thread.ofPlatform().name("cpu-worker-", 1).factory()
         );
     }

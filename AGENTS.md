@@ -4,7 +4,7 @@ Este documento estabelece as diretrizes arquiteturais, padrões de concorrência
 
 O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetado para demonstrar e treinar conceitos avançados de **Concorrência Moderna**:
 - **Cargas de I/O (Banco de Dados / Rede):** Isoladas em **Virtual Threads** sob demanda (1 Virtual Thread por carteira processada).
-- **Cargas de Processamento (CPU-bound):** Isoladas em um **Pool Fixo de Threads Tradicionais de Plataforma**, limitado estritamente à quantidade de núcleos do processador da máquina (`Runtime.getRuntime().availableProcessors()`).
+- **Cargas de Processamento (CPU-bound):** Isoladas em um **Pool Fixo de Threads Tradicionais de Plataforma**, dimensionado a partir dos núcleos da máquina (`Runtime.getRuntime().availableProcessors()`) reservando 2 núcleos para o Sistema Operacional, JVM (GC/JIT) e Carrier Threads (`Math.max(1, cores - 2)`).
 - **Domínio:** **Simulador de Risco de Portfólios Simplificado** com suporte a múltiplas estratégias via **Strategy Pattern**:
   - **Monte Carlo (`MONTE_CARLO`):** Simulação estocástica de choques com 100.000 iterações por carteira.
   - **VaR Paramétrico (`VAR_PARAMETRICO`):** Cálculo analítico de Value at Risk com nível de confiança de 95% ($z = 1.645 \times \sqrt{\sum w_i^2 \sigma_i^2}$).
@@ -27,8 +27,8 @@ O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetad
    - **Passo 4 (I/O - Escrita):** Após a conclusão da matemática, a Virtual Thread é retomada (*remounted*) e atualiza o risco calculado no banco (`atualizarRisco`).
 
 ### 1.2. Gestão de CPU (Pool Fixo de Threads Tradicionais)
-1. **Executor:** Configurado em [`ConcurrencyConfig`](file:///src/main/java/com/example/threadswallet/infra/config/ConcurrencyConfig.java) como `cpuThreadPool` utilizando `Executors.newFixedThreadPool(cores)`.
-2. **Dimensionamento Estrito:** O tamanho do pool é igual a `Runtime.getRuntime().availableProcessors()`.
+1. **Executor:** Configurado em [`ConcurrencyConfig`](file:///src/main/java/com/example/threadswallet/infra/config/ConcurrencyConfig.java) como `cpuThreadPool` utilizando `Executors.newFixedThreadPool(poolSize)`.
+2. **Dimensionamento Responsivo:** O tamanho do pool é dimensionado como `Math.max(1, cores - threadsReservadas)` (padrão de 2 threads reservadas via `simulador.cpu-pool.threads-reservadas`), garantindo que o Sistema Operacional, a JVM (Garbage Collector e JIT) e as Carrier Threads de I/O mantenham responsividade contínua mesmo sob saturação de simulações matemáticas.
 3. **Estratégias de Cálculo (Stateless - Strategy Pattern):**
    - Ambas as implementações de [`CalculadoraRisco`](file:///src/main/java/com/example/threadswallet/domain/carteira/CalculadoraRisco.java) são **completamente stateless (não guardam estado interno)**.
    - **Monte Carlo ([`MonteCarloCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoImpl.java)):** Executa o laço gerando choques gaussianos aleatórios via `ThreadLocalRandom.current()` para simular volatilidade e esgotar a CPU de forma controlada.

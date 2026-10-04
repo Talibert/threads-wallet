@@ -25,17 +25,20 @@ public class ExecutarSimulacaoCargaUseCase {
     private final CarteiraRepository carteiraRepository;
     private final ExecutorService virtualThreadExecutor;
     private final int iteracoesMonteCarloPadrao;
+    private final int threadsReservadas;
 
     public ExecutarSimulacaoCargaUseCase(
             ProcessarCarteiraUseCase processarCarteiraUseCase,
             CarteiraRepository carteiraRepository,
             @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor,
-            @Value("${simulador.monte-carlo.iteracoes:100000}") int iteracoesMonteCarloPadrao
+            @Value("${simulador.monte-carlo.iteracoes:100000}") int iteracoesMonteCarloPadrao,
+            @Value("${simulador.cpu-pool.threads-reservadas:2}") int threadsReservadas
     ) {
         this.processarCarteiraUseCase = processarCarteiraUseCase;
         this.carteiraRepository = carteiraRepository;
         this.virtualThreadExecutor = virtualThreadExecutor;
         this.iteracoesMonteCarloPadrao = iteracoesMonteCarloPadrao;
+        this.threadsReservadas = threadsReservadas;
     }
 
     /**
@@ -56,7 +59,8 @@ public class ExecutarSimulacaoCargaUseCase {
             carteiraIds = carteiraIds.subList(0, limite);
 
         int total = carteiraIds.size();
-        int cores = Runtime.getRuntime().availableProcessors();
+        int totalCores = Runtime.getRuntime().availableProcessors();
+        int poolCores = Math.max(1, totalCores - threadsReservadas);
         int totalIteracoes = (iteracoes != null && iteracoes > 0) ? iteracoes : this.iteracoesMonteCarloPadrao;
 
         log.info(">>> INICIANDO CRONÔMETRO: Submetendo {} carteiras (Método: {}, {} iterações) ao executor de Virtual Threads...",
@@ -93,12 +97,12 @@ public class ExecutarSimulacaoCargaUseCase {
                  🏷️  Método de Cálculo: %s
                  ⏱️  Tempo Total Decorrido: %d ms (%.2f s)
                  ⚡ Tempo Médio por Carteira: %.2f ms
-                 🧠 Núcleos de CPU (Pool Fixo): %d
+                 🧠 Núcleos de CPU (Pool Fixo): %d (de %d núcleos da máquina, %d reservados)
                  🎲 Iterações Parametrizadas: %d
                  🧵 Gestão de I/O: %d Virtual Threads disparadas concorrentemente
                 ================================================================================
                 """,
-                total, metodo, tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, cores, totalIteracoes, total
+                total, metodo, tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, poolCores, totalCores, threadsReservadas, totalIteracoes, total
         );
 
         System.out.println(resumo);
@@ -108,7 +112,7 @@ public class ExecutarSimulacaoCargaUseCase {
                 total,
                 tempoTotalMs,
                 tempoMedioPorCarteira,
-                cores,
+                poolCores,
                 totalIteracoes,
                 metodo,
                 "Simulação massiva de concorrência concluída com sucesso."

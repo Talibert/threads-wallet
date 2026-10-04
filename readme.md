@@ -44,7 +44,7 @@ O domínio do sistema é um **Simulador de Risco de Portfólios** simplificado, 
                         ▼                                     │
         ┌─────────────────────────────────────────────────────┴──────────────────┐
         │        GESTÃO DE CPU: Pool Fixo de Threads Tradicionais (Platform)     │
-        │             Tamanho = Quantidade de núcleos da máquina                 │
+        │             Tamanho = Núcleos da máquina - 2 (Reservadas p/ SO/JVM)    │
         │       Executa Estratégia Selecionada (Monte Carlo ou VaR Paramétrico)  │
         └────────────────────────────────────────────────────────────────────────┘
 ```
