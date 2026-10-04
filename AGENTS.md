@@ -232,4 +232,34 @@ Ao criar novas regras, endpoints ou fluxos de concorrência:
 - [ ] Cálculos matemáticos pesados ou loops intensivos de CPU **devem** ser submetidos ao `cpuThreadPool`.
 - [ ] Nunca chamar `monteCarloCalculadora.calcularRisco(...)` diretamente na Virtual Thread sem despachar para o pool de CPU.
 - [ ] Manter construtores privados e fábricas estáticas em entidades de domínio.
+- [ ] Condicionais `if` de instrução única não devem abrir chaves `{}`.
 - [ ] Rodar `./mvnw test` e verificar se os 10 guardrails do ArchUnit continuam 100% íntegros.
+
+---
+
+## ✒️ 8. Padrões de Código e Estilo de Sintaxe (Code Style)
+
+### 8.1. Estruturas Condicionais (`if` de instrução única)
+- **Regra:** Todo `if` cujo bloco de execução contenha apenas uma única instrução (guard clauses, validações, `throw`, `return`, `continue`, `break`, ou atribuição simples) **NUNCA deve abrir chaves `{}`**.
+- O comando subsequente deve ser indentado na linha imediatamente abaixo.
+- Chaves `{}` são reservadas **exclusivamente** para blocos condicionais que contenham duas ou mais instruções.
+
+**Exemplo Correto (✅):**
+```java
+if (carteiraId == null)
+    throw new DomainException("O ID da carteira é obrigatório.");
+
+if (linhaLimpa.isEmpty())
+    continue;
+
+if (domain.getId() != null)
+    entity.setId(domain.getId());
+```
+
+**Exemplo Incorreto (❌):**
+```java
+if (carteiraId == null) {
+    throw new DomainException("O ID da carteira é obrigatório.");
+}
+```
+

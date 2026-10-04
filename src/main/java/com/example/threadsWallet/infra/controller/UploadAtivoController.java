@@ -17,8 +17,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import com.example.threadswallet.domain.carteira.CarteiraRepository;
-import com.example.threadswallet.domain.exception.DomainException;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -28,14 +26,9 @@ import org.springframework.web.multipart.MultipartFile;
 public class UploadAtivoController {
 
     private final ProcessarArquivoAtivosUseCase processarArquivoAtivosUseCase;
-    private final CarteiraRepository carteiraRepository;
 
-    public UploadAtivoController(
-            ProcessarArquivoAtivosUseCase processarArquivoAtivosUseCase,
-            CarteiraRepository carteiraRepository
-    ) {
+    public UploadAtivoController(ProcessarArquivoAtivosUseCase processarArquivoAtivosUseCase) {
         this.processarArquivoAtivosUseCase = processarArquivoAtivosUseCase;
-        this.carteiraRepository = carteiraRepository;
     }
 
     @Operation(
@@ -54,10 +47,6 @@ public class UploadAtivoController {
             @Parameter(description = "Arquivo .csv ou .txt a ser enviado", required = true)
             @RequestParam("arquivo") MultipartFile arquivo
     ) {
-        if (!carteiraRepository.existsById(carteiraId)) {
-            throw new DomainException(String.format("Carteira com ID %d não foi encontrada.", carteiraId));
-        }
-
         ArquivoUpload arquivoUpload = ArquivoUpload.from(arquivo);
         ProcessamentoAtivosResult resultado = processarArquivoAtivosUseCase.execute(carteiraId, arquivoUpload.inputStream());
 

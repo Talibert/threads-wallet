@@ -150,6 +150,7 @@ class ProcessarArquivoAtivosUseCaseTest extends UnitAbstractTests {
         DomainException ex = assertThrows(DomainException.class, () -> useCase.execute(999L, stream));
         assertThat(ex.getMessage()).isEqualTo("Carteira com ID 999 não foi encontrada.");
 
+        verify(virtualThreadExecutor, never()).submit(any(java.util.concurrent.Callable.class));
         verify(ativoRepository, never()).salvarTodos(any());
     }
 

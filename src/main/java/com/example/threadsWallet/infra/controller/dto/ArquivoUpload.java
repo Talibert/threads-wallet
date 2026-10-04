@@ -23,11 +23,10 @@ public record ArquivoUpload(
             throw new IllegalArgumentException("O nome do arquivo não foi informado.");
 
         String extensao = extrairExtensao(nomeOriginal);
-        if (!EXTENSOES_PERMITIDAS.contains(extensao.toLowerCase())) {
+        if (!EXTENSOES_PERMITIDAS.contains(extensao.toLowerCase()))
             throw new IllegalArgumentException(
                     String.format("Formato de arquivo inválido ('.%s'). São permitidos apenas arquivos .csv ou .txt.", extensao)
             );
-        }
 
         try {
             return new ArquivoUpload(nomeOriginal, extensao, arquivo.getInputStream(), arquivo.getSize());
@@ -38,9 +37,8 @@ public record ArquivoUpload(
 
     private static String extrairExtensao(String nomeArquivo) {
         int ultimoPonto = nomeArquivo.lastIndexOf('.');
-        if (ultimoPonto == -1 || ultimoPonto == nomeArquivo.length() - 1) {
+        if (ultimoPonto == -1 || ultimoPonto == nomeArquivo.length() - 1)
             return "";
-        }
         return nomeArquivo.substring(ultimoPonto + 1);
     }
 }

@@ -10,10 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
 
-import com.example.threadswallet.application.usecase.ProcessarArquivoAtivosUseCase;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -25,9 +22,6 @@ class UploadAtivoControllerTest extends ControllerAbstractTests {
 
     @Autowired
     private AtivoRepository ativoRepository;
-
-    @MockitoSpyBean
-    private ProcessarArquivoAtivosUseCase processarArquivoAtivosUseCase;
 
     private Long carteiraId1;
     private Long carteiraId2;
@@ -98,7 +92,7 @@ class UploadAtivoControllerTest extends ControllerAbstractTests {
                 .andExpect(jsonPath("$.error").value("Erro de Domínio"))
                 .andExpect(jsonPath("$.message").value("Carteira com ID 999999 não foi encontrada."));
 
-        verifyNoInteractions(processarArquivoAtivosUseCase);
+        assertThat(ativoRepository.findByCarteiraId(999999L)).isEmpty();
     }
 
     @Test

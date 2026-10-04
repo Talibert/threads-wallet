@@ -13,15 +13,12 @@ public class Ativo {
     private final Double taxaVolatilidade;
 
     private Ativo(Long id, Long carteiraId, String ticker, Double valorAtual, Double taxaVolatilidade) {
-        if (ticker == null || ticker.isBlank()) {
+        if (ticker == null || ticker.isBlank())
             throw new DomainException("O ticker do ativo não pode ser nulo ou vazio.");
-        }
-        if (valorAtual == null || valorAtual <= 0) {
+        if (valorAtual == null || valorAtual <= 0)
             throw new DomainException("O valor atual do ativo deve ser maior que zero.");
-        }
-        if (taxaVolatilidade == null || taxaVolatilidade < 0) {
+        if (taxaVolatilidade == null || taxaVolatilidade < 0)
             throw new DomainException("A taxa de volatilidade não pode ser negativa.");
-        }
 
         this.id = id;
         this.carteiraId = carteiraId;

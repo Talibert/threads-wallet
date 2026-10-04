@@ -17,9 +17,8 @@ public class MonteCarloCalculadoraRiscoImpl implements CalculadoraRisco {
 
     @Override
     public Double calcularRisco(List<Ativo> ativos, int iteracoes) {
-        if (ativos == null || ativos.isEmpty() || iteracoes <= 0) {
+        if (ativos == null || ativos.isEmpty() || iteracoes <= 0)
             return 0.0;
-        }
 
         double valorTotalCarteira = 0.0;
         int n = ativos.size();
@@ -31,9 +30,8 @@ public class MonteCarloCalculadoraRiscoImpl implements CalculadoraRisco {
             valorTotalCarteira += ativo.getValorAtual();
         }
 
-        if (valorTotalCarteira <= 0) {
+        if (valorTotalCarteira <= 0)
             return 0.0;
-        }
 
         for (int i = 0; i < n; i++) {
             Ativo ativo = ativos.get(i);

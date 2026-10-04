@@ -46,9 +46,8 @@ public class ExecutarSimulacaoCargaUseCase {
      * O método de cálculo é obrigatório (Strategy Pattern) e o número de iterações é parametrizado.
      */
     public SimulacaoResult execute(Integer limite, Integer iteracoes, MetodoCalculo metodo) {
-        if (metodo == null) {
+        if (metodo == null)
             throw new DomainException("O método de cálculo de risco é obrigatório.");
-        }
 
         List<Long> carteiraIds = carteiraRepository.findAllIds();
 

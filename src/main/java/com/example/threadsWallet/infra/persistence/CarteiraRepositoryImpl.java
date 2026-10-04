@@ -92,9 +92,8 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
 
     private CarteiraJpaEntity toJpaEntity(Carteira domain) {
         CarteiraJpaEntity entity = new CarteiraJpaEntity();
-        if (domain.getId() != null) {
+        if (domain.getId() != null)
             entity.setId(domain.getId());
-        }
         entity.setNomeCliente(domain.getNomeCliente());
         entity.setRiscoCalculado(domain.getRiscoCalculado());
 
@@ -106,9 +105,8 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
                     ativoDomain.getValorAtual(),
                     ativoDomain.getTaxaVolatilidade()
             );
-            if (ativoDomain.getId() != null) {
+            if (ativoDomain.getId() != null)
                 ativoJpa.setId(ativoDomain.getId());
-            }
             ativosJpa.add(ativoJpa);
         }
         entity.setAtivos(ativosJpa);

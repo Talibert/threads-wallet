@@ -17,9 +17,8 @@ public class AtivoRepositoryImpl implements AtivoRepository {
 
     @Override
     public void salvarTodos(List<Ativo> ativos) {
-        if (ativos == null || ativos.isEmpty()) {
+        if (ativos == null || ativos.isEmpty())
             return;
-        }
 
         List<AtivoJpaEntity> entities = ativos.stream()
                 .map(this::toJpaEntityAtivo)
@@ -50,9 +49,8 @@ public class AtivoRepositoryImpl implements AtivoRepository {
                 domain.getValorAtual(),
                 domain.getTaxaVolatilidade()
         );
-        if (domain.getId() != null) {
+        if (domain.getId() != null)
             entity.setId(domain.getId());
-        }
         return entity;
     }
 

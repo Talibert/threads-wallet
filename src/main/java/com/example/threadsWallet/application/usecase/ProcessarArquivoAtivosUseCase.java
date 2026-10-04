@@ -59,6 +59,9 @@ public class ProcessarArquivoAtivosUseCase {
         if (inputStream == null)
             throw new DomainException("O fluxo de dados do arquivo não pode ser nulo.");
 
+        if (!carteiraRepository.existsById(carteiraId))
+            throw new DomainException(String.format("Carteira com ID %d não foi encontrada.", carteiraId));
+
         // A transação é iniciada DENTRO da Virtual Thread através do transactionTemplate,
         // garantindo que todo o processamento em lotes e rollback pertençam à mesma transação
         // com um único commit atômico no final.
@@ -80,9 +83,6 @@ public class ProcessarArquivoAtivosUseCase {
     }
 
     private ProcessamentoAtivosResult processarESalvarLotes(Long carteiraId, InputStream inputStream) {
-        if (!carteiraRepository.existsById(carteiraId))
-            throw new DomainException(String.format("Carteira com ID %d não foi encontrada.", carteiraId));
-
         long inicio = System.currentTimeMillis();
         List<Ativo> lote = new ArrayList<>(batchSize);
         int totalAtivosSalvos = 0;
@@ -95,9 +95,8 @@ public class ProcessarArquivoAtivosUseCase {
                 numeroLinha++;
                 String linhaLimpa = linha.trim();
 
-                if (linhaLimpa.isEmpty()) {
+                if (linhaLimpa.isEmpty())
                     continue;
-                }
 
                 // Detecta e ignora cabeçalho se houver
                 if (numeroLinha == 1 && isCabecalho(linhaLimpa)) {
@@ -126,9 +125,8 @@ public class ProcessarArquivoAtivosUseCase {
             throw new RuntimeException("Falha de I/O ao ler o arquivo de ativos", e);
         }
 
-        if (totalAtivosSalvos == 0) {
+        if (totalAtivosSalvos == 0)
             throw new DomainException("O arquivo não contém nenhum ativo válido para processamento.");
-        }
 
         long tempoTotalMs = System.currentTimeMillis() - inicio;
         log.info("Processamento e gravação de ativos concluídos para a carteira {}: {} ativos salvos em lote em {} ms.",
@@ -148,12 +146,11 @@ public class ProcessarArquivoAtivosUseCase {
 
     private Ativo converterLinhaParaAtivo(String linha, int numeroLinha, Long carteiraId) {
         String[] partes = linha.split(";");
-        if (partes.length != 3) {
+        if (partes.length != 3)
             throw new DomainException(String.format(
                     "Linha %d inválida: esperado exatamente 3 campos separados por ';' (ticker;valorAtual;taxaVolatilidade), mas recebeu: '%s'",
                     numeroLinha, linha
             ));
-        }
 
         try {
             String ticker = partes[0].trim();

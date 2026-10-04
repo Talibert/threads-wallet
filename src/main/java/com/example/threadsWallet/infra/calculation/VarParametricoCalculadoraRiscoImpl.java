@@ -19,18 +19,16 @@ public class VarParametricoCalculadoraRiscoImpl implements CalculadoraRisco {
 
     @Override
     public Double calcularRisco(List<Ativo> ativos, int iteracoes) {
-        if (ativos == null || ativos.isEmpty()) {
+        if (ativos == null || ativos.isEmpty())
             return 0.0;
-        }
 
         double valorTotalCarteira = 0.0;
         for (Ativo ativo : ativos) {
             valorTotalCarteira += ativo.getValorAtual();
         }
 
-        if (valorTotalCarteira <= 0) {
+        if (valorTotalCarteira <= 0)
             return 0.0;
-        }
 
         // Variância da carteira: soma ponderada das variâncias individuais dos ativos
         double somaVarianciasPonderadas = 0.0;
