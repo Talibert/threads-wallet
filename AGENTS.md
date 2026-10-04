@@ -214,6 +214,7 @@ Com a aplicação rodando (`./mvnw spring-boot:run` com o PostgreSQL do `docker-
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a massa de carteiras com 3 a 5 ativos cada no banco. |
 | `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras cadastradas e seus riscos calculados. |
+| `POST` | `/api/ativos/upload` | `arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos:** Recebe e valida arquivos de ativos na borda HTTP (rejeita arquivos vazios ou com extensões diferentes de `.csv`/`.txt`). |
 
 ---
 
