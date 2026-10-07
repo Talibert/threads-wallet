@@ -1,9 +1,11 @@
 package com.example.threadswallet.integration;
 
 import com.example.threadswallet.IntegrationAbstractTests;
+import com.example.threadswallet.application.dto.CarteiraIndividualResult;
 import com.example.threadswallet.application.dto.SimulacaoResult;
-import com.example.threadswallet.application.usecase.ExecutarSimulacaoCargaUseCase;
 import com.example.threadswallet.application.usecase.GerarMassaDadosUseCase;
+import com.example.threadswallet.application.usecase.ProcessarCarteiraIndividualUseCase;
+import com.example.threadswallet.application.usecase.ProcessarMultiplasCarteirasUseCase;
 import com.example.threadswallet.domain.carteira.Carteira;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
 import com.example.threadswallet.domain.carteira.MetodoCalculo;
@@ -23,7 +25,10 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
     private GerarMassaDadosUseCase gerarMassaDadosUseCase;
 
     @Autowired
-    private ExecutarSimulacaoCargaUseCase simulacaoUseCase;
+    private ProcessarMultiplasCarteirasUseCase multiplasCarteirasUseCase;
+
+    @Autowired
+    private ProcessarCarteiraIndividualUseCase carteiraIndividualUseCase;
 
     @Autowired
     private CarteiraRepository carteiraRepository;
@@ -41,7 +46,7 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         assertEquals(totalCarteiras, geradas);
 
         // 2. Dispara o cálculo concorrente sobre as carteiras existentes com Monte Carlo
-        SimulacaoResult resultado = simulacaoUseCase.execute(totalCarteiras, null, MetodoCalculo.MONTE_CARLO);
+        SimulacaoResult resultado = multiplasCarteirasUseCase.execute(totalCarteiras, null, MetodoCalculo.MONTE_CARLO);
 
         // Validações dos resultados
         assertNotNull(resultado);
@@ -84,7 +89,7 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         assertEquals(totalCarteiras, geradas);
 
         // 2. Dispara o cálculo concorrente sobre as carteiras existentes com VaR Paramétrico
-        SimulacaoResult resultado = simulacaoUseCase.execute(totalCarteiras, 0, MetodoCalculo.VAR_PARAMETRICO);
+        SimulacaoResult resultado = multiplasCarteirasUseCase.execute(totalCarteiras, 0, MetodoCalculo.VAR_PARAMETRICO);
 
         assertNotNull(resultado);
         assertEquals(totalCarteiras, resultado.totalCarteirasProcessadas());
@@ -105,5 +110,24 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
 
         System.out.printf("⚡ Teste de Concorrência (VaR Paramétrico): %d carteiras processadas em %d ms!%n",
                 totalCarteiras, resultado.tempoTotalMs());
+    }
+
+    @Test
+    @DisplayName("Cenário de Carteira Individual: Calcular risco sob demanda com particionamento de CPU no Monte Carlo")
+    void deveCalcularCarteiraIndividualComParticionamentoCpu() {
+        gerarMassaDadosUseCase.execute(1, 3, 5, true);
+        Long carteiraId = carteiraRepository.findAllIds().getFirst();
+
+        CarteiraIndividualResult result = carteiraIndividualUseCase.execute(carteiraId, 10000, MetodoCalculo.MONTE_CARLO);
+
+        assertNotNull(result);
+        assertEquals(carteiraId, result.carteiraId());
+        assertTrue(result.riscoCalculado() > 0.0);
+        assertEquals(MetodoCalculo.MONTE_CARLO, result.metodo());
+        assertTrue(result.nucleosCpuUtilizados() >= 1);
+
+        RiscoCalculado salvo = riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.MONTE_CARLO)
+                .orElseThrow();
+        assertEquals(result.riscoCalculado(), salvo.getValor());
     }
 }

@@ -66,4 +66,28 @@ class MonteCarloCalculadoraRiscoTest extends UnitAbstractTests {
         assertEquals(0.1234, riscoMockado);
         verify(calculadora).calcularRisco(ativos, 500);
     }
+
+    @Test
+    @DisplayName("Deve retornar true para isParalelizavel, calcular amostra e consolidar com sucesso")
+    void deveCalcularAmostraEConsolidar() {
+        assertTrue(calculadora.isParalelizavel());
+
+        List<Ativo> ativos = List.of(
+                Ativo.create(1L, "PETR4", 20000.0, 0.30),
+                Ativo.create(1L, "VALE3", 30000.0, 0.25)
+        );
+
+        var amostra1 = calculadora.calcularAmostra(ativos, 5000);
+        var amostra2 = calculadora.calcularAmostra(ativos, 5000);
+
+        assertNotNull(amostra1);
+        assertEquals(5000, amostra1.iteracoes());
+        assertNotNull(amostra2);
+        assertEquals(5000, amostra2.iteracoes());
+
+        Double riscoConsolidado = calculadora.consolidarAmostras(List.of(amostra1, amostra2));
+        assertNotNull(riscoConsolidado);
+        assertTrue(riscoConsolidado > 0.0);
+    }
 }
+

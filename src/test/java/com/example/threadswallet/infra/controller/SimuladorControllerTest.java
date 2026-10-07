@@ -118,4 +118,47 @@ class SimuladorControllerTest extends ControllerAbstractTests {
                 .andExpect(jsonPath("$.error").value("Erro de Domínio"))
                 .andExpect(jsonPath("$.message").value("O método de cálculo de risco é obrigatório."));
     }
+
+    @Test
+    @DisplayName("POST /api/simulador/carteiras/{carteiraId}/executar com MONTE_CARLO deve processar individualmente com paralelismo")
+    void deveCalcularCarteiraIndividualViaApiMonteCarlo() throws Exception {
+        mockMvc.perform(post("/api/simulador/massa-dados")
+                        .param("totalCarteiras", "1")
+                        .param("limparAntes", "true"))
+                .andExpect(status().isOk());
+
+        Long carteiraId = carteiraRepository.findAllIds().getFirst();
+
+        mockMvc.perform(post("/api/simulador/carteiras/" + carteiraId + "/executar")
+                        .param("metodo", "MONTE_CARLO")
+                        .param("iteracoes", "10000")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.carteiraId").value(carteiraId))
+                .andExpect(jsonPath("$.riscoCalculado").isNumber())
+                .andExpect(jsonPath("$.metodoCalculo").value("MONTE_CARLO"))
+                .andExpect(jsonPath("$.nucleosCpuUtilizados").isNumber())
+                .andExpect(jsonPath("$.iteracoes").value(10000));
+    }
+
+    @Test
+    @DisplayName("POST /api/simulador/carteiras/{carteiraId}/executar com VAR_PARAMETRICO deve processar com 1 thread")
+    void deveCalcularCarteiraIndividualViaApiVarParametrico() throws Exception {
+        mockMvc.perform(post("/api/simulador/massa-dados")
+                        .param("totalCarteiras", "1")
+                        .param("limparAntes", "true"))
+                .andExpect(status().isOk());
+
+        Long carteiraId = carteiraRepository.findAllIds().getFirst();
+
+        mockMvc.perform(post("/api/simulador/carteiras/" + carteiraId + "/executar")
+                        .param("metodo", "VAR_PARAMETRICO")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.carteiraId").value(carteiraId))
+                .andExpect(jsonPath("$.riscoCalculado").isNumber())
+                .andExpect(jsonPath("$.metodoCalculo").value("VAR_PARAMETRICO"))
+                .andExpect(jsonPath("$.nucleosCpuUtilizados").value(1));
+    }
 }
+

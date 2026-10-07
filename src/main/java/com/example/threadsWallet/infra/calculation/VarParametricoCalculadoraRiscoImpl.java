@@ -1,5 +1,6 @@
 package com.example.threadswallet.infra.calculation;
 
+import com.example.threadswallet.domain.carteira.AmostraRisco;
 import com.example.threadswallet.domain.carteira.Ativo;
 import com.example.threadswallet.domain.carteira.CalculadoraRisco;
 import com.example.threadswallet.domain.carteira.MetodoCalculo;
@@ -23,9 +24,8 @@ public class VarParametricoCalculadoraRiscoImpl implements CalculadoraRisco {
             return 0.0;
 
         double valorTotalCarteira = 0.0;
-        for (Ativo ativo : ativos) {
+        for (Ativo ativo : ativos)
             valorTotalCarteira += ativo.getValorAtual();
-        }
 
         if (valorTotalCarteira <= 0)
             return 0.0;
@@ -46,6 +46,21 @@ public class VarParametricoCalculadoraRiscoImpl implements CalculadoraRisco {
         double varParametrico = Z_SCORE_95 * desvioPadraoCarteira;
 
         return Math.round(varParametrico * 10000.0) / 10000.0;
+    }
+
+    @Override
+    public boolean isParalelizavel() {
+        return false;
+    }
+
+    @Override
+    public AmostraRisco calcularAmostra(List<Ativo> ativos, int iteracoes) {
+        throw new UnsupportedOperationException("O método VAR_PARAMETRICO não suporta particionamento por amostras.");
+    }
+
+    @Override
+    public Double consolidarAmostras(List<AmostraRisco> amostras) {
+        throw new UnsupportedOperationException("O método VAR_PARAMETRICO não suporta consolidação de amostras.");
     }
 
     @Override

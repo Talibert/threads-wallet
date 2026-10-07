@@ -19,21 +19,25 @@ O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetad
 
 ### 1.1. Gestão de I/O (Virtual Threads)
 1. **Executor:** Configurado em [`ConcurrencyConfig`](file:///src/main/java/com/example/threadswallet/infra/config/ConcurrencyConfig.java) como `virtualThreadExecutor` utilizando `Executors.newThreadPerTaskExecutor(...)` com Virtual Threads nomeadas.
-2. **Ciclo de Vida por Carteira:**
-   Para cada carteira processada, uma **Virtual Thread exclusiva** é disparada no [`ExecutarSimulacaoCargaUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ExecutarSimulacaoCargaUseCase.java) e orquestrada no [`ProcessarCarteiraUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCase.java):
+2. **Ciclo de Vida por Carteira (Processamento em Lote / Throughput):**
+   Para cada carteira processada no lote, uma **Virtual Thread exclusiva** é disparada no [`ProcessarMultiplasCarteirasUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ProcessarMultiplasCarteirasUseCase.java) e orquestrada no [`ProcessarCarteiraUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCase.java):
    - **Passo 1 (I/O - Leitura):** Consulta os ativos da carteira no banco de dados (`findAtivosByCarteiraId`).
    - **Passo 2 (Offload de CPU):** Submete a execução matemática da estratégia de risco selecionada para o pool fixo de CPU (`cpuThreadPool.submit(...)`).
    - **Passo 3 (Espera sem Bloqueio de SO):** Chama `future.get()`. A Virtual Thread é suspensa (*unmounted*) da *Carrier Thread*, liberando o núcleo do sistema operacional para outras tarefas.
    - **Passo 4 (I/O - Escrita):** Após a conclusão da matemática, a Virtual Thread é retomada (*remounted*) e persiste ou atualiza o risco calculado na tabela dedicada `risco_calculado` via `RiscoCalculadoRepository` (`salvar`).
+3. **Ciclo de Vida por Carteira (Processamento Individual / Latency):**
+   No [`ProcessarCarteiraIndividualUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ProcessarCarteiraIndividualUseCase.java), uma Virtual Thread orquestra o cálculo sob demanda de uma carteira específica:
+   - Se o método for **`MONTE_CARLO` (Paralelizável / CPU-bound):** divide as iterações igualmente em $N$ fatias entre todos os núcleos disponíveis no pool fixo de CPU (`cpuThreadPool`), executando em paralelo (Map-Reduce) para minimizar o tempo de resposta e consolidando as amostras ao final.
+   - Se o método for **`VAR_PARAMETRICO` (Analítico $O(N)$):** despacha uma única tarefa para 1 thread nativa de CPU, evitando qualquer overhead desnecessário de concorrência já que o cálculo é instantâneo (< 0.001 ms).
 
 ### 1.2. Gestão de CPU (Pool Fixo de Threads Tradicionais)
 1. **Executor:** Configurado em [`ConcurrencyConfig`](file:///src/main/java/com/example/threadswallet/infra/config/ConcurrencyConfig.java) como `cpuThreadPool` utilizando `Executors.newFixedThreadPool(poolSize)`.
 2. **Dimensionamento Responsivo:** O tamanho do pool é dimensionado como `Math.max(1, cores - threadsReservadas)` (padrão de 2 threads reservadas via `simulador.cpu-pool.threads-reservadas`), garantindo que o Sistema Operacional, a JVM (Garbage Collector e JIT) e as Carrier Threads de I/O mantenham responsividade contínua mesmo sob saturação de simulações matemáticas.
 3. **Estratégias de Cálculo (Stateless - Strategy Pattern):**
    - Ambas as implementações de [`CalculadoraRisco`](file:///src/main/java/com/example/threadswallet/domain/carteira/CalculadoraRisco.java) são **completamente stateless (não guardam estado interno)**.
-   - **Monte Carlo ([`MonteCarloCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoImpl.java)):** Executa o laço gerando choques gaussianos aleatórios via `ThreadLocalRandom.current()` para simular volatilidade e esgotar a CPU de forma controlada.
-   - **VaR Paramétrico ([`VarParametricoCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/VarParametricoCalculadoraRiscoImpl.java)):** Executa a fórmula analítica de variância-covariância sob distribuição normal para VaR 95%.
-   - **Injeção de Estratégias via Spring:** O Spring injeta automaticamente todas as implementações (`List<CalculadoraRisco>`) no [`ProcessarCarteiraUseCase`](file:///src/main/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCase.java), que indexa as estratégias em um mapa imutável por [`MetodoCalculo`](file:///src/main/java/com/example/threadswallet/domain/carteira/MetodoCalculo.java).
+   - **Monte Carlo ([`MonteCarloCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoImpl.java)):** Executa o laço gerando choques gaussianos aleatórios via `ThreadLocalRandom.current()` para simular volatilidade. Suporta particionamento via `calcularAmostra` e agregação via `consolidarAmostras` ([`AmostraRisco`](file:///src/main/java/com/example/threadswallet/domain/carteira/AmostraRisco.java)).
+   - **VaR Paramétrico ([`VarParametricoCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/VarParametricoCalculadoraRiscoImpl.java)):** Executa a fórmula analítica de variância-covariância sob distribuição normal para VaR 95% ($O(N)$). Executado de forma unitária (1 thread).
+   - **Injeção de Estratégias via Spring:** O Spring injeta automaticamente todas as implementações (`List<CalculadoraRisco>`) nos casos de uso, que indexam as estratégias em um mapa imutável por [`MetodoCalculo`](file:///src/main/java/com/example/threadswallet/domain/carteira/MetodoCalculo.java).
 
 ---
 
@@ -115,18 +119,21 @@ com.example.threadswallet/
 │   │   ├── AtivoRepository.java                 # Interface de persistência do ativo (DIP)
 │   │   ├── RiscoCalculadoRepository.java        # Interface de persistência do risco calculado (DIP)
 │   │   ├── CalculadoraRisco.java                # Interface para o cálculo de risco (DIP)
+│   │   ├── AmostraRisco.java                    # Record para agregação de amostras Map-Reduce
 │   │   └── MetodoCalculo.java                   # Enum de métodos de cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
 │       └── DomainException.java                 # Exceção pura de negócio
 ├── application/                                 # Orquestração de Casos de Uso
 │   ├── dto/
-│   │   ├── SimulacaoResult.java                 # Resultado e métricas da simulação
+│   │   ├── SimulacaoResult.java                 # Resultado e métricas da simulação em lote
+│   │   ├── CarteiraIndividualResult.java        # Resultado e métricas de cálculo individual
 │   │   ├── CarteiraDTO.java                     # DTO de leitura de carteira
 │   │   ├── RiscoCalculadoDTO.java               # DTO de risco calculado
 │   │   └── ProcessamentoAtivosResult.java       # Resultado do processamento de ativos
 │   └── usecase/
-│       ├── ProcessarCarteiraUseCase.java        # Fluxo I/O -> CPU -> I/O da carteira (com Strategy)
-│       ├── ExecutarSimulacaoCargaUseCase.java   # Disparo concorrente de 1.000 Virtual Threads
+│       ├── ProcessarMultiplasCarteirasUseCase.java # Disparo concorrente em lote de Virtual Threads
+│       ├── ProcessarCarteiraIndividualUseCase.java # Cálculo de carteira única com particionamento de CPU
+│       ├── ProcessarCarteiraUseCase.java        # Fluxo I/O -> CPU -> I/O da carteira no lote
 │       ├── GerarMassaDadosUseCase.java          # Geração em lote de 1.000 carteiras no H2
 │       ├── ListarCarteirasUseCase.java          # Consulta de carteiras e riscos
 │       └── ProcessarArquivoAtivosUseCase.java   # Ingestão e gravação de ativos em lotes via Virtual Thread
@@ -135,7 +142,7 @@ com.example.threadswallet/
     │   ├── ConcurrencyConfig.java               # Configuração dos pools de threads
     │   └── OpenApiConfig.java                   # Documentação Swagger
     ├── calculation/
-    │   ├── MonteCarloCalculadoraRiscoImpl.java  # Motor CPU Monte Carlo (100k iterações)
+    │   ├── MonteCarloCalculadoraRiscoImpl.java  # Motor CPU Monte Carlo (Map-Reduce ou sequencial)
     │   └── VarParametricoCalculadoraRiscoImpl.java # Motor CPU VaR Paramétrico (Analítico 95%)
     ├── persistence/
     │   ├── CarteiraJpaEntity.java               # Entidade JPA da tabela carteira
@@ -148,10 +155,11 @@ com.example.threadswallet/
     │   ├── AtivoRepositoryImpl.java             # Implementação de AtivoRepository
     │   └── RiscoCalculadoRepositoryImpl.java    # Implementação de RiscoCalculadoRepository
     ├── controller/
-    │   ├── SimuladorController.java             # Endpoints REST para teste e consulta
+    │   ├── SimuladorController.java             # Endpoints REST para simulação em lote e individual
     │   ├── UploadAtivoController.java           # Endpoint REST de ingestão de ativos por carteira
     │   └── dto/
-    │       ├── SimulacaoResponse.java           # Envelope de resposta HTTP
+    │       ├── SimulacaoResponse.java           # Envelope de resposta HTTP da simulação em lote
+    │       ├── CarteiraIndividualResponse.java  # Envelope de resposta HTTP do cálculo individual
     │       ├── CarteiraResponse.java            # DTO de resposta de carteira
     │       ├── RiscoCalculadoResponse.java      # DTO de resposta de risco calculado
     │       ├── ArquivoUpload.java               # Encapsulamento e validação de upload multipart
@@ -190,6 +198,8 @@ O sistema foi preparado para rodar uma validação massiva com 1.000 carteiras s
 
 # Executa os testes unitários de UseCase com Mockito e Spy
 ./mvnw test -Dtest=ProcessarCarteiraUseCaseTest
+./mvnw test -Dtest=ProcessarCarteiraIndividualUseCaseTest
+./mvnw test -Dtest=ProcessarMultiplasCarteirasUseCaseTest
 
 # Executa exclusivamente o cenário de carga massivo com 1.000 carteiras
 ./mvnw test -Dtest=SimuladorConcorrenciaIntegrationTest
@@ -206,7 +216,7 @@ O projeto adota uma taxonomia estrita para tempo de execução e isolamento de t
 - **Unitários ([`UnitAbstractTests`](file:///src/test/java/com/example/threadswallet/UnitAbstractTests.java)):**
   - Configuração: [`application-test-unit.properties`](file:///src/test/resources/application-test-unit.properties).
   - Escopo: **Zero Spring Context e zero banco de dados**. Execução instantânea via JUnit 5 e Mockito.
-  - Implementações: [`CarteiraTest`](file:///src/test/java/com/example/threadswallet/domain/carteira/CarteiraTest.java), [`MonteCarloCalculadoraRiscoTest`](file:///src/test/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoTest.java), [`ProcessarCarteiraUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCaseTest.java), [`ExecutarSimulacaoCargaUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ExecutarSimulacaoCargaUseCaseTest.java), [`ProcessarArquivoAtivosUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarArquivoAtivosUseCaseTest.java), [`ArquivoUploadTest`](file:///src/test/java/com/example/threadswallet/infra/controller/dto/ArquivoUploadTest.java), [`DBInstallTest`](file:///src/test/java/com/example/threadswallet/infra/tools/DBInstallTest.java).
+  - Implementações: [`CarteiraTest`](file:///src/test/java/com/example/threadswallet/domain/carteira/CarteiraTest.java), [`MonteCarloCalculadoraRiscoTest`](file:///src/test/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoTest.java), [`ProcessarCarteiraUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarCarteiraUseCaseTest.java), [`ProcessarMultiplasCarteirasUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarMultiplasCarteirasUseCaseTest.java), [`ProcessarCarteiraIndividualUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarCarteiraIndividualUseCaseTest.java), [`ProcessarArquivoAtivosUseCaseTest`](file:///src/test/java/com/example/threadswallet/application/usecase/ProcessarArquivoAtivosUseCaseTest.java), [`ArquivoUploadTest`](file:///src/test/java/com/example/threadswallet/infra/controller/dto/ArquivoUploadTest.java), [`DBInstallTest`](file:///src/test/java/com/example/threadswallet/infra/tools/DBInstallTest.java).
 - **Repositório ([`RepositoryAbstractTests`](file:///src/test/java/com/example/threadswallet/RepositoryAbstractTests.java)):**
   - Configuração: [`application-test-repository.properties`](file:///src/test/resources/application-test-repository.properties).
   - Escopo: `@DataJpaTest`, carrega **exclusivamente a camada de persistência** (JPA/Hibernate) e o banco de dados H2 com migrations via Flyway.
@@ -230,7 +240,8 @@ Com a aplicação rodando (`./mvnw spring-boot:run` com o PostgreSQL do `docker-
 | Método | Endpoint | Parâmetros | Descrição |
 |---|---|---|---|
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a massa de carteiras com 3 a 5 ativos cada no banco. |
-| `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
+| `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente em lote (Throughput) com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
+| `POST` | `/api/simulador/carteiras/{carteiraId}/executar` | `carteiraId` (Path, ID da carteira)<br>`metodo` (obrigatório: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`iteracoes` (opcional, padrão: 100000) | **Cálculo de Carteira Individual (Latency):** Calcula o risco de uma carteira sob demanda. Para `MONTE_CARLO`, divide as iterações entre todas as threads de CPU (Map-Reduce). Para `VAR_PARAMETRICO`, executa direto em 1 thread de CPU. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras cadastradas e seus riscos calculados. |
 | `POST` | `/api/carteiras/{carteiraId}/ativos/upload` | `carteiraId` (Path, ID da carteira)<br>`arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos por Carteira:** Recebe arquivo de ativos e associa todos à carteira indicada no path, salvando em lotes atômicos. Rejeita arquivos vazios, formatos inválidos ou carteiras inexistentes (400). |
 

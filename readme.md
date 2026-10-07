@@ -105,18 +105,25 @@ com.example.threadswallet/
 │   ├── carteira/
 │   │   ├── Carteira.java                        # Entidade / Agregado
 │   │   ├── Ativo.java                           # Entidade de Ativo
-│   │   ├── CarteiraRepository.java              # Interface de Repositório (DIP)
+│   │   ├── RiscoCalculado.java                  # Entidade de Risco Calculado
+│   │   ├── CarteiraRepository.java              # Interface de Repositório Carteira (DIP)
+│   │   ├── AtivoRepository.java                 # Interface de Repositório Ativo (DIP)
+│   │   ├── RiscoCalculadoRepository.java        # Interface de Repositório Risco (DIP)
 │   │   ├── CalculadoraRisco.java                # Interface de Cálculo de Risco (DIP)
+│   │   ├── AmostraRisco.java                    # Record de agregação de amostras Map-Reduce
 │   │   └── MetodoCalculo.java                   # Enum de Métodos de Cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
 │       └── DomainException.java                 # Exceções de Domínio
 ├── application/                                 # Casos de Uso e Orquestração
 │   ├── dto/
-│   │   ├── SimulacaoResult.java                 # Métricas da simulação
-│   │   └── CarteiraDTO.java                     # DTO de leitura de carteira
+│   │   ├── SimulacaoResult.java                 # Métricas da simulação em lote
+│   │   ├── CarteiraIndividualResult.java        # Métricas de cálculo individual
+│   │   ├── CarteiraDTO.java                     # DTO de leitura de carteira
+│   │   └── RiscoCalculadoDTO.java               # DTO de risco calculado
 │   └── usecase/
-│       ├── ProcessarCarteiraUseCase.java        # Orquestração I/O -> CPU -> I/O (com Strategy)
-│       ├── ExecutarSimulacaoCargaUseCase.java   # Disparo das 1.000 Virtual Threads
+│       ├── ProcessarMultiplasCarteirasUseCase.java # Disparo em lote das 1.000 Virtual Threads
+│       ├── ProcessarCarteiraIndividualUseCase.java # Cálculo de carteira única com particionamento de CPU
+│       ├── ProcessarCarteiraUseCase.java        # Orquestração I/O -> CPU -> I/O no lote
 │       ├── GerarMassaDadosUseCase.java          # Inserção em lote no banco
 │       └── ListarCarteirasUseCase.java          # Consulta de carteiras
 └── infra/                                       # Adaptadores Tecnológicos
@@ -124,19 +131,26 @@ com.example.threadswallet/
     │   ├── ConcurrencyConfig.java               # Configuração dos Executores (VT e CPU)
     │   └── OpenApiConfig.java                   # Configuração Swagger
     ├── calculation/
-    │   ├── MonteCarloCalculadoraRiscoImpl.java  # Motor de Monte Carlo (100.000 iterações)
+    │   ├── MonteCarloCalculadoraRiscoImpl.java  # Motor de Monte Carlo (Map-Reduce ou sequencial)
     │   └── VarParametricoCalculadoraRiscoImpl.java # Motor de VaR Paramétrico (Analítico 95%)
     ├── persistence/
     │   ├── CarteiraJpaEntity.java               # Entidade JPA Carteira
     │   ├── AtivoJpaEntity.java                  # Entidade JPA Ativo
-    │   ├── CarteiraJpaRepository.java           # Spring Data JPA
-    │   ├── AtivoJpaRepository.java              # Spring Data JPA
-    │   └── CarteiraRepositoryImpl.java          # Implementação de CarteiraRepository
+    │   ├── RiscoCalculadoJpaEntity.java         # Entidade JPA Risco Calculado
+    │   ├── CarteiraJpaRepository.java           # Spring Data JPA Carteira
+    │   ├── AtivoJpaRepository.java              # Spring Data JPA Ativo
+    │   ├── RiscoCalculadoJpaRepository.java     # Spring Data JPA Risco Calculado
+    │   ├── CarteiraRepositoryImpl.java          # Implementação de CarteiraRepository
+    │   ├── AtivoRepositoryImpl.java             # Implementação de AtivoRepository
+    │   └── RiscoCalculadoRepositoryImpl.java    # Implementação de RiscoCalculadoRepository
     ├── controller/
-    │   ├── SimuladorController.java             # Endpoints REST
+    │   ├── SimuladorController.java             # Endpoints REST (em lote e individual)
+    │   ├── UploadAtivoController.java           # Endpoint REST de upload de ativos
     │   └── dto/
-    │       ├── SimulacaoResponse.java           # DTO de resposta da simulação
-    │       └── CarteiraResponse.java            # DTO de carteira
+    │       ├── SimulacaoResponse.java           # DTO de resposta da simulação em lote
+    │       ├── CarteiraIndividualResponse.java  # DTO de resposta do cálculo individual
+    │       ├── CarteiraResponse.java            # DTO de carteira
+    │       └── RiscoCalculadoResponse.java      # DTO de risco calculado
     ├── tools/
     │   └── DBInstall.java                       # Gerador autônomo de DDL para Migrations Flyway
     └── exception/
@@ -251,9 +265,10 @@ Para garantir testes rápidos e sem acoplamentos desnecessários, o projeto defi
 | Método | Endpoint | Parâmetros | Descrição |
 |---|---|---|---|
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a base de carteiras com 3 a 5 ativos cada no banco. |
-| `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
+| `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente em lote (Throughput) com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
+| `POST` | `/api/simulador/carteiras/{carteiraId}/executar` | `carteiraId` (Path, ID da carteira)<br>`metodo` (obrigatório: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`iteracoes` (opcional, padrão: 100000) | **Cálculo de Carteira Individual (Latency):** Calcula o risco de uma carteira sob demanda. Para `MONTE_CARLO`, particiona as iterações entre todas as threads de CPU (Map-Reduce). Para `VAR_PARAMETRICO`, executa direto em 1 thread de CPU. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras e seus riscos calculados. |
-| `POST` | `/api/ativos/upload` | `arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos:** Recebe e valida arquivos de ativos na borda HTTP (rejeita arquivos vazios ou com extensões diferentes de `.csv`/`.txt`). |
+| `POST` | `/api/carteiras/{carteiraId}/ativos/upload` | `carteiraId` (Path, ID da carteira)<br>`arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos por Carteira:** Recebe arquivo de ativos e associa todos à carteira indicada no path, salvando em lotes atômicos. |
 
 ### Exemplo de Disparo sob Demanda via cURL:
 

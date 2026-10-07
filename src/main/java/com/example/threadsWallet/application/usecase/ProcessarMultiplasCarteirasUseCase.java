@@ -17,9 +17,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 @Component
-public class ExecutarSimulacaoCargaUseCase {
+public class ProcessarMultiplasCarteirasUseCase {
 
-    private static final Logger log = LoggerFactory.getLogger(ExecutarSimulacaoCargaUseCase.class);
+    private static final Logger log = LoggerFactory.getLogger(ProcessarMultiplasCarteirasUseCase.class);
 
     private final ProcessarCarteiraUseCase processarCarteiraUseCase;
     private final CarteiraRepository carteiraRepository;
@@ -27,7 +27,7 @@ public class ExecutarSimulacaoCargaUseCase {
     private final int iteracoesMonteCarloPadrao;
     private final int threadsReservadas;
 
-    public ExecutarSimulacaoCargaUseCase(
+    public ProcessarMultiplasCarteirasUseCase(
             ProcessarCarteiraUseCase processarCarteiraUseCase,
             CarteiraRepository carteiraRepository,
             @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor,
@@ -42,8 +42,8 @@ public class ExecutarSimulacaoCargaUseCase {
     }
 
     /**
-     * Executa o cálculo de risco concorrente apenas para carteiras já cadastradas na base.
-     * O método de cálculo é obrigatório (Strategy Pattern) e o número de iterações é parametrizado.
+     * Executa o cálculo de risco concorrente em lote para múltiplas carteiras cadastradas.
+     * Dispara uma Virtual Thread exclusiva por carteira. Cada Virtual Thread utiliza 1 thread do pool de CPU.
      */
     public SimulacaoResult execute(Integer limite, Integer iteracoes, MetodoCalculo metodo) {
         if (metodo == null)
@@ -90,7 +90,7 @@ public class ExecutarSimulacaoCargaUseCase {
         String resumo = String.format(
                 """
                 \n================================================================================
-                 🚀 SIMULAÇÃO DE CARGA CONCLUÍDA COM SUCESSO!
+                 🚀 SIMULAÇÃO EM LOTE DE CARTEIRAS CONCLUÍDA COM SUCESSO!
                 ================================================================================
                  📊 Total de Carteiras Processadas: %d
                  🏷️  Método de Cálculo: %s
@@ -105,7 +105,7 @@ public class ExecutarSimulacaoCargaUseCase {
         );
 
         System.out.println(resumo);
-        log.info("Simulação concluída em {} ms", tempoTotalMs);
+        log.info("Simulação em lote concluída em {} ms", tempoTotalMs);
 
         return new SimulacaoResult(
                 total,

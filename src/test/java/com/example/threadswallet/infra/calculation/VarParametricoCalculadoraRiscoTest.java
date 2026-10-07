@@ -60,4 +60,17 @@ class VarParametricoCalculadoraRiscoTest extends UnitAbstractTests {
         assertEquals(0.0999, riscoMockado);
         verify(calculadora).calcularRisco(ativos, 0);
     }
+
+    @Test
+    @DisplayName("Deve retornar false para isParalelizavel e lançar exceção ao chamar métodos de amostras")
+    void deveValidarComportamentoNaoParalelizavel() {
+        assertFalse(calculadora.isParalelizavel());
+
+        assertThrows(UnsupportedOperationException.class,
+                () -> calculadora.calcularAmostra(List.of(), 100));
+
+        assertThrows(UnsupportedOperationException.class,
+                () -> calculadora.consolidarAmostras(List.of()));
+    }
 }
+

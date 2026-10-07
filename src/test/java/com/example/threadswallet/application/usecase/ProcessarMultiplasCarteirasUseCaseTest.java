@@ -26,7 +26,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-class ExecutarSimulacaoCargaUseCaseTest extends UnitAbstractTests {
+class ProcessarMultiplasCarteirasUseCaseTest extends UnitAbstractTests {
 
     @Mock
     private ProcessarCarteiraUseCase processarCarteiraUseCase;
@@ -40,11 +40,11 @@ class ExecutarSimulacaoCargaUseCaseTest extends UnitAbstractTests {
     @Captor
     private ArgumentCaptor<Long> carteiraIdCaptor;
 
-    private ExecutarSimulacaoCargaUseCase useCase;
+    private ProcessarMultiplasCarteirasUseCase useCase;
 
     @BeforeEach
     void setUp() {
-        useCase = new ExecutarSimulacaoCargaUseCase(
+        useCase = new ProcessarMultiplasCarteirasUseCase(
                 processarCarteiraUseCase,
                 carteiraRepository,
                 virtualThreadExecutor,
@@ -73,7 +73,6 @@ class ExecutarSimulacaoCargaUseCaseTest extends UnitAbstractTests {
         assertEquals(iteracoesCustom, resultado.iteracoesMonteCarloPorCarteira());
         assertEquals(MetodoCalculo.MONTE_CARLO, resultado.metodoCalculo());
 
-        // Verifica que o executor de Virtual Threads (Spy) foi chamado para cada carteira
         verify(processarCarteiraUseCase, times(3)).execute(carteiraIdCaptor.capture(), eq(iteracoesCustom), eq(MetodoCalculo.MONTE_CARLO));
         assertThat(carteiraIdCaptor.getAllValues()).containsExactlyInAnyOrderElementsOf(ids);
     }
