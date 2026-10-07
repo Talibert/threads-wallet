@@ -7,6 +7,8 @@ import com.example.threadswallet.application.usecase.GerarMassaDadosUseCase;
 import com.example.threadswallet.domain.carteira.Carteira;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
 import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.RiscoCalculado;
+import com.example.threadswallet.domain.carteira.RiscoCalculadoRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +27,9 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
 
     @Autowired
     private CarteiraRepository carteiraRepository;
+
+    @Autowired
+    private RiscoCalculadoRepository riscoCalculadoRepository;
 
     @Test
     @DisplayName("Cenário de Teste Massivo: Gerar 1.000 carteiras e processar com Virtual Threads (I/O) e CPU Pool (Monte Carlo)")
@@ -45,16 +50,24 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         assertTrue(resultado.tempoTotalMs() > 0, "O tempo total deve ser maior que zero");
         assertTrue(resultado.nucleosCpuDisponiveis() > 0);
 
-        // Verifica no banco se todas as 1.000 carteiras tiveram o risco calculado
+        // Verifica no banco se todas as 1.000 carteiras existem e possuem ativos
         List<Carteira> carteiras = carteiraRepository.findAll();
         assertEquals(totalCarteiras, carteiras.size());
 
         for (Carteira carteira : carteiras) {
-            assertNotNull(carteira.getRiscoCalculado(), "Carteira ID " + carteira.getId() + " deveria ter risco calculado");
-            assertTrue(carteira.getRiscoCalculado() > 0.0, "O risco deve ser maior que zero");
             assertFalse(carteira.getAtivos().isEmpty(), "Carteira deve possuir ativos");
             assertTrue(carteira.getAtivos().size() >= 3 && carteira.getAtivos().size() <= 5,
                     "Carteira deve conter de 3 a 5 ativos");
+        }
+
+        // Verifica que todos os 1.000 riscos foram salvos na tabela dedicada risco_calculado
+        List<RiscoCalculado> riscos = riscoCalculadoRepository.findAll();
+        assertEquals(totalCarteiras, riscos.size());
+
+        for (RiscoCalculado risco : riscos) {
+            assertNotNull(risco.getValor(), "Carteira ID " + risco.getCarteiraId() + " deveria ter risco calculado");
+            assertTrue(risco.getValor() > 0.0, "O risco deve ser maior que zero");
+            assertEquals(MetodoCalculo.MONTE_CARLO, risco.getTipo());
         }
 
         System.out.printf("✅ Teste de Concorrência (Monte Carlo): %d carteiras processadas em %d ms!%n",
@@ -81,9 +94,13 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         List<Carteira> carteiras = carteiraRepository.findAll();
         assertEquals(totalCarteiras, carteiras.size());
 
-        for (Carteira carteira : carteiras) {
-            assertNotNull(carteira.getRiscoCalculado());
-            assertTrue(carteira.getRiscoCalculado() > 0.0);
+        List<RiscoCalculado> riscos = riscoCalculadoRepository.findAll();
+        assertEquals(totalCarteiras, riscos.size());
+
+        for (RiscoCalculado risco : riscos) {
+            assertNotNull(risco.getValor());
+            assertTrue(risco.getValor() > 0.0);
+            assertEquals(MetodoCalculo.VAR_PARAMETRICO, risco.getTipo());
         }
 
         System.out.printf("⚡ Teste de Concorrência (VaR Paramétrico): %d carteiras processadas em %d ms!%n",

@@ -24,7 +24,7 @@ O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetad
    - **Passo 1 (I/O - Leitura):** Consulta os ativos da carteira no banco de dados (`findAtivosByCarteiraId`).
    - **Passo 2 (Offload de CPU):** Submete a execução matemática da estratégia de risco selecionada para o pool fixo de CPU (`cpuThreadPool.submit(...)`).
    - **Passo 3 (Espera sem Bloqueio de SO):** Chama `future.get()`. A Virtual Thread é suspensa (*unmounted*) da *Carrier Thread*, liberando o núcleo do sistema operacional para outras tarefas.
-   - **Passo 4 (I/O - Escrita):** Após a conclusão da matemática, a Virtual Thread é retomada (*remounted*) e atualiza o risco calculado no banco (`atualizarRisco`).
+   - **Passo 4 (I/O - Escrita):** Após a conclusão da matemática, a Virtual Thread é retomada (*remounted*) e persiste ou atualiza o risco calculado na tabela dedicada `risco_calculado` via `RiscoCalculadoRepository` (`salvar`).
 
 ### 1.2. Gestão de CPU (Pool Fixo de Threads Tradicionais)
 1. **Executor:** Configurado em [`ConcurrencyConfig`](file:///src/main/java/com/example/threadswallet/infra/config/ConcurrencyConfig.java) como `cpuThreadPool` utilizando `Executors.newFixedThreadPool(poolSize)`.
@@ -39,7 +39,7 @@ O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetad
 
 ## 🗄️ 2. Modelagem de Dados (PostgreSQL / H2 nos Testes)
 
-O banco de dados é propositalmente enxuto, estruturado em duas tabelas com relacionamento 1:N:
+O banco de dados é estruturado em três tabelas relacionais com relacionamentos 1:N a partir da `carteira`:
 
 ```
 ┌─────────────────────────────────┐
@@ -47,32 +47,36 @@ O banco de dados é propositalmente enxuto, estruturado em duas tabelas com rela
 ├─────────────────────────────────┤
 │ id: BIGINT [PK]                 │
 │ nome_cliente: VARCHAR NOT NULL  │
-│ risco_calculado: DOUBLE NULL    │
-└────────────────┬────────────────┘
-                 │ 1
-                 │
-                 │ N
-┌────────────────▼────────────────┐
-│              ATIVO              │
-├─────────────────────────────────┤
-│ id: BIGINT [PK]                 │
-│ carteira_id: BIGINT [FK]        │
-│ ticker: VARCHAR NOT NULL        │
-│ valor_atual: DOUBLE NOT NULL    │
-│ taxa_volatilidade: DOUBLE NOT   │
-└─────────────────────────────────┘
+└───────┬─────────────────┬───────┘
+        │ 1               │ 1
+        │                 │
+        │ N               │ N
+┌───────▼────────┐ ┌──────▼─────────────────────┐
+│     ATIVO      │ │      RISCO_CALCULADO       │
+├────────────────┤ ├────────────────────────────┤
+│ id: BIGINT [PK]│ │ id: BIGINT [PK]            │
+│ carteira_id: FK│ │ carteira_id: BIGINT [FK]   │
+│ ticker: VARCHAR│ │ valor: DOUBLE NOT NULL     │
+│ valor_atual: D │ │ tipo: VARCHAR NOT NULL     │
+│ taxa_volat.: D │ └────────────────────────────┘
+└────────────────┘
 ```
 
 - **Carteira:**
   - `id`: `Long` (Chave Primária, gerada automaticamente)
   - `nome_cliente`: `String` (Nome do titular da carteira)
-  - `risco_calculado`: `Double` (Permite nulo; preenchido após o cálculo de Monte Carlo)
 - **Ativo:**
   - `id`: `Long` (Chave Primária, gerada automaticamente)
-  - `carteira_id`: `Long` (Chave Estrangeira apontando para Carteira)
+  - `carteira_id`: `Long` (Chave Estrangeira apontando para Carteira com `ON DELETE CASCADE`)
   - `ticker`: `String` (Código do papel, ex: PETR4, VALE3)
   - `valor_atual`: `Double` (Preço de mercado do ativo)
   - `taxa_volatilidade`: `Double` (Desvio padrão histórico diário, ex: 0.15)
+- **Risco Calculado:**
+  - `id`: `Long` (Chave Primária, gerada automaticamente)
+  - `carteira_id`: `Long` (Chave Estrangeira apontando para Carteira com `ON DELETE CASCADE`)
+  - `valor`: `Double` (Valor numérico do risco calculado)
+  - `tipo`: `MetodoCalculo` (Enum convertido para VARCHAR: `MONTE_CARLO`, `VAR_PARAMETRICO`)
+  - `Constraint`: `UNIQUE (carteira_id, tipo)` garantindo unicidade por tipo de risco até a introdução do sistema de dataout temporal.
 
 ---
 
@@ -104,10 +108,12 @@ com.example.threadswallet/
 ├── Application.java                             # Ponto de entrada Spring Boot
 ├── domain/                                      # Core Agnóstico de Negócio
 │   ├── carteira/
-│   │   ├── Carteira.java                        # Agregado da carteira
+│   │   ├── Carteira.java                        # Agregado da carteira (sem riscoCalculado)
 │   │   ├── Ativo.java                           # Entidade do ativo
+│   │   ├── RiscoCalculado.java                  # Entidade de domínio para risco calculado
 │   │   ├── CarteiraRepository.java              # Interface de persistência da carteira (DIP)
 │   │   ├── AtivoRepository.java                 # Interface de persistência do ativo (DIP)
+│   │   ├── RiscoCalculadoRepository.java        # Interface de persistência do risco calculado (DIP)
 │   │   ├── CalculadoraRisco.java                # Interface para o cálculo de risco (DIP)
 │   │   └── MetodoCalculo.java                   # Enum de métodos de cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
@@ -116,6 +122,7 @@ com.example.threadswallet/
 │   ├── dto/
 │   │   ├── SimulacaoResult.java                 # Resultado e métricas da simulação
 │   │   ├── CarteiraDTO.java                     # DTO de leitura de carteira
+│   │   ├── RiscoCalculadoDTO.java               # DTO de risco calculado
 │   │   └── ProcessamentoAtivosResult.java       # Resultado do processamento de ativos
 │   └── usecase/
 │       ├── ProcessarCarteiraUseCase.java        # Fluxo I/O -> CPU -> I/O da carteira (com Strategy)
@@ -133,16 +140,20 @@ com.example.threadswallet/
     ├── persistence/
     │   ├── CarteiraJpaEntity.java               # Entidade JPA da tabela carteira
     │   ├── AtivoJpaEntity.java                  # Entidade JPA da tabela ativo
+    │   ├── RiscoCalculadoJpaEntity.java         # Entidade JPA da tabela risco_calculado
     │   ├── CarteiraJpaRepository.java           # Spring Data JPA da carteira
     │   ├── AtivoJpaRepository.java              # Spring Data JPA do ativo
+    │   ├── RiscoCalculadoJpaRepository.java     # Spring Data JPA do risco calculado
     │   ├── CarteiraRepositoryImpl.java          # Implementação de CarteiraRepository
-    │   └── AtivoRepositoryImpl.java             # Implementação de AtivoRepository
+    │   ├── AtivoRepositoryImpl.java             # Implementação de AtivoRepository
+    │   └── RiscoCalculadoRepositoryImpl.java    # Implementação de RiscoCalculadoRepository
     ├── controller/
     │   ├── SimuladorController.java             # Endpoints REST para teste e consulta
     │   ├── UploadAtivoController.java           # Endpoint REST de ingestão de ativos por carteira
     │   └── dto/
     │       ├── SimulacaoResponse.java           # Envelope de resposta HTTP
     │       ├── CarteiraResponse.java            # DTO de resposta de carteira
+    │       ├── RiscoCalculadoResponse.java      # DTO de resposta de risco calculado
     │       ├── ArquivoUpload.java               # Encapsulamento e validação de upload multipart
     │       └── UploadArquivoResponse.java       # Resposta HTTP de upload
     ├── tools/

@@ -16,7 +16,6 @@ class CarteiraTest extends UnitAbstractTests {
 
         assertNotNull(carteira);
         assertEquals("Cliente Teste", carteira.getNomeCliente());
-        assertNull(carteira.getRiscoCalculado());
         assertTrue(carteira.getAtivos().isEmpty());
     }
 
@@ -40,18 +39,9 @@ class CarteiraTest extends UnitAbstractTests {
     }
 
     @Test
-    @DisplayName("Deve atualizar o risco calculado com sucesso")
-    void deveAtualizarRiscoCalculado() {
-        Carteira carteira = Carteira.create("Investidor Beta");
-        carteira.atualizarRisco(0.1542);
-
-        assertEquals(0.1542, carteira.getRiscoCalculado());
-    }
-
-    @Test
-    @DisplayName("Deve lançar exceção ao tentar definir risco negativo")
-    void deveLancarExcecaoRiscoNegativo() {
-        Carteira carteira = Carteira.create("Investidor Gamma");
-        assertThrows(DomainException.class, () -> carteira.atualizarRisco(-0.01));
+    @DisplayName("Deve lançar exceção ao tentar adicionar ativo nulo")
+    void deveLancarExcecaoAoAdicionarAtivoNulo() {
+        Carteira carteira = Carteira.create("Investidor Alpha");
+        assertThrows(DomainException.class, () -> carteira.adicionarAtivo(null));
     }
 }

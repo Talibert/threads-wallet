@@ -22,9 +22,6 @@ public class CarteiraJpaEntity {
     @Column(name = "nome_cliente", nullable = false)
     private String nomeCliente;
 
-    @Column(name = "risco_calculado")
-    private Double riscoCalculado;
-
     @OneToMany(mappedBy = "carteira", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<AtivoJpaEntity> ativos = new ArrayList<>();
 

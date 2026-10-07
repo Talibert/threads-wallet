@@ -62,6 +62,10 @@ class FlywayMigrationTest extends RepositoryAbstractTests {
                 assertTrue(tables.next(), "Tabela ATIVO deve existir no banco de dados");
             }
 
+            try (ResultSet tables = metaData.getTables(null, null, "RISCO_CALCULADO", null)) {
+                assertTrue(tables.next(), "Tabela RISCO_CALCULADO deve existir no banco de dados");
+            }
+
             List<String> carteiraColumns = new ArrayList<>();
             try (ResultSet rs = metaData.getColumns(null, null, "CARTEIRA", null)) {
                 while (rs.next()) {
@@ -71,7 +75,7 @@ class FlywayMigrationTest extends RepositoryAbstractTests {
 
             assertTrue(carteiraColumns.contains("id"), "Coluna id deve existir em CARTEIRA");
             assertTrue(carteiraColumns.contains("nome_cliente"), "Coluna nome_cliente deve existir em CARTEIRA");
-            assertTrue(carteiraColumns.contains("risco_calculado"), "Coluna risco_calculado deve existir em CARTEIRA");
+            assertFalse(carteiraColumns.contains("risco_calculado"), "Coluna risco_calculado NÃO deve existir em CARTEIRA");
 
             List<String> ativoColumns = new ArrayList<>();
             try (ResultSet rs = metaData.getColumns(null, null, "ATIVO", null)) {
@@ -85,6 +89,18 @@ class FlywayMigrationTest extends RepositoryAbstractTests {
             assertTrue(ativoColumns.contains("ticker"), "Coluna ticker deve existir em ATIVO");
             assertTrue(ativoColumns.contains("valor_atual"), "Coluna valor_atual deve existir em ATIVO");
             assertTrue(ativoColumns.contains("taxa_volatilidade"), "Coluna taxa_volatilidade deve existir em ATIVO");
+
+            List<String> riscoColumns = new ArrayList<>();
+            try (ResultSet rs = metaData.getColumns(null, null, "RISCO_CALCULADO", null)) {
+                while (rs.next()) {
+                    riscoColumns.add(rs.getString("COLUMN_NAME").toLowerCase());
+                }
+            }
+
+            assertTrue(riscoColumns.contains("id"), "Coluna id deve existir em RISCO_CALCULADO");
+            assertTrue(riscoColumns.contains("carteira_id"), "Coluna carteira_id deve existir em RISCO_CALCULADO");
+            assertTrue(riscoColumns.contains("valor"), "Coluna valor deve existir em RISCO_CALCULADO");
+            assertTrue(riscoColumns.contains("tipo"), "Coluna tipo deve existir em RISCO_CALCULADO");
         }
     }
 }

@@ -4,6 +4,8 @@ import com.example.threadswallet.UnitAbstractTests;
 import com.example.threadswallet.domain.carteira.Ativo;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
 import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.RiscoCalculado;
+import com.example.threadswallet.domain.carteira.RiscoCalculadoRepository;
 import com.example.threadswallet.domain.exception.DomainException;
 import com.example.threadswallet.infra.calculation.MonteCarloCalculadoraRiscoImpl;
 import com.example.threadswallet.infra.calculation.VarParametricoCalculadoraRiscoImpl;
@@ -17,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -31,6 +34,9 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
     @Mock
     private CarteiraRepository carteiraRepository;
 
+    @Mock
+    private RiscoCalculadoRepository riscoCalculadoRepository;
+
     @Spy
     private MonteCarloCalculadoraRiscoImpl monteCarloCalculadora;
 
@@ -38,7 +44,7 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
     private VarParametricoCalculadoraRiscoImpl parametricoCalculadora;
 
     @Captor
-    private ArgumentCaptor<Double> riscoCaptor;
+    private ArgumentCaptor<RiscoCalculado> riscoCaptor;
 
     private ExecutorService cpuThreadPool;
     private ProcessarCarteiraUseCase processarCarteiraUseCase;
@@ -48,6 +54,7 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
         cpuThreadPool = Executors.newFixedThreadPool(2);
         processarCarteiraUseCase = new ProcessarCarteiraUseCase(
                 carteiraRepository,
+                riscoCalculadoRepository,
                 List.of(monteCarloCalculadora, parametricoCalculadora),
                 cpuThreadPool
         );
@@ -60,7 +67,7 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
     }
 
     @Test
-    @DisplayName("Deve processar carteira com Monte Carlo delegando para o Spy correspondente")
+    @DisplayName("Deve processar carteira com Monte Carlo delegando para o Spy correspondente e salvar novo risco")
     void deveProcessarCarteiraComMonteCarlo() {
         Long carteiraId = 42L;
         int iteracoes = 1000;
@@ -70,18 +77,40 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
         );
 
         when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(ativos);
+        when(riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.MONTE_CARLO))
+                .thenReturn(Optional.empty());
 
         Double resultado = processarCarteiraUseCase.execute(carteiraId, iteracoes, MetodoCalculo.MONTE_CARLO);
 
         assertNotNull(resultado);
         assertTrue(resultado > 0.0);
 
-        // Verifica que o Spy do Monte Carlo foi acionado e o paramétrico não
         verify(monteCarloCalculadora, times(1)).calcularRisco(eq(ativos), eq(iteracoes));
         verifyNoInteractions(parametricoCalculadora);
 
-        verify(carteiraRepository, times(1)).atualizarRisco(eq(carteiraId), riscoCaptor.capture());
-        assertEquals(resultado, riscoCaptor.getValue());
+        verify(riscoCalculadoRepository, times(1)).salvar(riscoCaptor.capture());
+        assertEquals(resultado, riscoCaptor.getValue().getValor());
+        assertEquals(carteiraId, riscoCaptor.getValue().getCarteiraId());
+        assertEquals(MetodoCalculo.MONTE_CARLO, riscoCaptor.getValue().getTipo());
+    }
+
+    @Test
+    @DisplayName("Deve atualizar risco existente ao processar cálculo para carteira que já possuía risco daquele tipo")
+    void deveAtualizarRiscoExistenteAoProcessar() {
+        Long carteiraId = 42L;
+        List<Ativo> ativos = List.of(Ativo.create(carteiraId, "PETR4", 15000.0, 0.25));
+
+        RiscoCalculado existente = RiscoCalculado.restore(100L, carteiraId, 0.05, MetodoCalculo.MONTE_CARLO);
+
+        when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(ativos);
+        when(riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.MONTE_CARLO))
+                .thenReturn(Optional.of(existente));
+
+        Double resultado = processarCarteiraUseCase.execute(carteiraId, 1000, MetodoCalculo.MONTE_CARLO);
+
+        verify(riscoCalculadoRepository, times(1)).salvar(riscoCaptor.capture());
+        assertEquals(100L, riscoCaptor.getValue().getId());
+        assertEquals(resultado, riscoCaptor.getValue().getValor());
     }
 
     @Test
@@ -94,18 +123,20 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
         );
 
         when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(ativos);
+        when(riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.VAR_PARAMETRICO))
+                .thenReturn(Optional.empty());
 
         Double resultado = processarCarteiraUseCase.execute(carteiraId, 0, MetodoCalculo.VAR_PARAMETRICO);
 
         assertNotNull(resultado);
         assertTrue(resultado > 0.0);
 
-        // Verifica que a estratégia Paramétrica foi chamada e o Monte Carlo não
         verify(parametricoCalculadora, times(1)).calcularRisco(eq(ativos), eq(0));
         verifyNoInteractions(monteCarloCalculadora);
 
-        verify(carteiraRepository, times(1)).atualizarRisco(eq(carteiraId), riscoCaptor.capture());
-        assertEquals(resultado, riscoCaptor.getValue());
+        verify(riscoCalculadoRepository, times(1)).salvar(riscoCaptor.capture());
+        assertEquals(resultado, riscoCaptor.getValue().getValor());
+        assertEquals(MetodoCalculo.VAR_PARAMETRICO, riscoCaptor.getValue().getTipo());
     }
 
     @Test
@@ -118,6 +149,7 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
 
         assertEquals("O método de cálculo de risco é obrigatório.", exception.getMessage());
         verifyNoInteractions(carteiraRepository);
+        verifyNoInteractions(riscoCalculadoRepository);
         verifyNoInteractions(monteCarloCalculadora);
         verifyNoInteractions(parametricoCalculadora);
     }
@@ -127,6 +159,7 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
     void deveLancarExcecaoSemConsultarBancoQuandoCalculadoraNaoEncontrada() {
         ProcessarCarteiraUseCase useCaseSemParametrico = new ProcessarCarteiraUseCase(
                 carteiraRepository,
+                riscoCalculadoRepository,
                 List.of(monteCarloCalculadora),
                 cpuThreadPool
         );
@@ -137,6 +170,7 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
 
         assertTrue(exception.getMessage().contains("Nenhuma calculadora de risco encontrada"));
         verifyNoInteractions(carteiraRepository);
+        verifyNoInteractions(riscoCalculadoRepository);
     }
 
     @Test
@@ -149,7 +183,7 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
 
         verifyNoInteractions(monteCarloCalculadora);
         verifyNoInteractions(parametricoCalculadora);
-        verify(carteiraRepository, never()).atualizarRisco(anyLong(), anyDouble());
+        verifyNoInteractions(riscoCalculadoRepository);
     }
 
     @Test
@@ -159,12 +193,14 @@ class ProcessarCarteiraUseCaseTest extends UnitAbstractTests {
         List<Ativo> ativos = List.of(Ativo.create(carteiraId, "ITUB4", 30000.0, 0.15));
 
         when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(ativos);
+        when(riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.MONTE_CARLO))
+                .thenReturn(Optional.empty());
         doReturn(0.0888).when(monteCarloCalculadora).calcularRisco(anyList(), anyInt());
 
         Double resultado = processarCarteiraUseCase.execute(carteiraId, 500, MetodoCalculo.MONTE_CARLO);
 
         assertEquals(0.0888, resultado);
         verify(monteCarloCalculadora).calcularRisco(ativos, 500);
-        verify(carteiraRepository).atualizarRisco(carteiraId, 0.0888);
+        verify(riscoCalculadoRepository).salvar(any(RiscoCalculado.class));
     }
 }

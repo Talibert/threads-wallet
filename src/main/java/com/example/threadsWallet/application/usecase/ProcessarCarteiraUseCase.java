@@ -4,12 +4,15 @@ import com.example.threadswallet.domain.carteira.Ativo;
 import com.example.threadswallet.domain.carteira.CalculadoraRisco;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
 import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.RiscoCalculado;
+import com.example.threadswallet.domain.carteira.RiscoCalculadoRepository;
 import com.example.threadswallet.domain.exception.DomainException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -20,15 +23,18 @@ import java.util.stream.Collectors;
 public class ProcessarCarteiraUseCase {
 
     private final CarteiraRepository carteiraRepository;
+    private final RiscoCalculadoRepository riscoCalculadoRepository;
     private final Map<MetodoCalculo, CalculadoraRisco> calculadoras;
     private final ExecutorService cpuThreadPool;
 
     public ProcessarCarteiraUseCase(
             CarteiraRepository carteiraRepository,
+            RiscoCalculadoRepository riscoCalculadoRepository,
             List<CalculadoraRisco> calculadoras,
             @Qualifier("cpuThreadPool") ExecutorService cpuThreadPool
     ) {
         this.carteiraRepository = carteiraRepository;
+        this.riscoCalculadoRepository = riscoCalculadoRepository;
         this.calculadoras = calculadoras.stream()
                 .collect(Collectors.toMap(CalculadoraRisco::getMetodo, Function.identity()));
         this.cpuThreadPool = cpuThreadPool;
@@ -64,7 +70,13 @@ public class ProcessarCarteiraUseCase {
             throw new RuntimeException("Erro ao calcular risco da carteira " + carteiraId, e.getCause());
         }
 
-        carteiraRepository.atualizarRisco(carteiraId, riscoCalculado);
+        Optional<RiscoCalculado> existente = riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, metodo);
+        if (existente.isPresent()) {
+            RiscoCalculado risco = existente.get();
+            risco.atualizarValor(riscoCalculado);
+            riscoCalculadoRepository.salvar(risco);
+        } else
+            riscoCalculadoRepository.salvar(RiscoCalculado.create(carteiraId, riscoCalculado, metodo));
 
         return riscoCalculado;
     }

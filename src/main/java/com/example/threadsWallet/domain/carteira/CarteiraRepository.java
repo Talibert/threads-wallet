@@ -15,8 +15,6 @@ public interface CarteiraRepository {
 
     List<Ativo> findAtivosByCarteiraId(Long carteiraId);
 
-    void atualizarRisco(Long carteiraId, Double riscoCalculado);
-
     List<Long> findAllIds();
 
     List<Carteira> findAll();

@@ -71,7 +71,7 @@ O domínio do sistema é um **Simulador de Risco de Portfólios** simplificado, 
 
 ## 🗄️ Modelagem de Dados (PostgreSQL / H2 nos Testes)
 
-Estrutura simples e direta com relacionamento 1 para N:
+Estrutura relacional com entidades independentes e normalizadas:
 
 ```
 ┌──────────────────────────────────────┐
@@ -79,20 +79,19 @@ Estrutura simples e direta com relacionamento 1 para N:
 ├──────────────────────────────────────┤
 │ id: BIGINT [PK, Auto Increment]      │
 │ nome_cliente: VARCHAR NOT NULL       │
-│ risco_calculado: DOUBLE NULL         │
-└──────────────────┬───────────────────┘
-                   │ 1
-                   │
-                   │ N
-┌──────────────────▼───────────────────┐
-│                ATIVO                 │
-├──────────────────────────────────────┤
-│ id: BIGINT [PK, Auto Increment]      │
-│ carteira_id: BIGINT [FK -> CARTEIRA] │
-│ ticker: VARCHAR NOT NULL             │
-│ valor_atual: DOUBLE NOT NULL         │
-│ taxa_volatilidade: DOUBLE NOT NULL   │
-└──────────────────────────────────────┘
+└─────────┬──────────────────┬─────────┘
+          │ 1                │ 1
+          │                  │
+          │ N                │ N
+┌─────────▼────────────┐  ┌──▼───────────────────────────────────┐
+│        ATIVO         │  │           RISCO_CALCULADO            │
+├──────────────────────┤  ├──────────────────────────────────────┤
+│ id: BIGINT [PK]      │  │ id: BIGINT [PK, Auto Increment]      │
+│ carteira_id: FK      │  │ carteira_id: BIGINT [FK -> CARTEIRA] │
+│ ticker: VARCHAR      │  │ valor: DOUBLE NOT NULL               │
+│ valor_atual: DOUBLE  │  │ tipo: VARCHAR NOT NULL               │
+│ taxa_volatilidade: D │  └──────────────────────────────────────┘
+└──────────────────────┘
 ```
 
 ---

@@ -63,11 +63,6 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
     }
 
     @Override
-    public void atualizarRisco(Long carteiraId, Double riscoCalculado) {
-        carteiraJpaRepository.atualizarRisco(carteiraId, riscoCalculado);
-    }
-
-    @Override
     public List<Long> findAllIds() {
         return carteiraJpaRepository.findAllIds();
     }
@@ -95,7 +90,6 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
         if (domain.getId() != null)
             entity.setId(domain.getId());
         entity.setNomeCliente(domain.getNomeCliente());
-        entity.setRiscoCalculado(domain.getRiscoCalculado());
 
         List<AtivoJpaEntity> ativosJpa = new ArrayList<>();
         for (Ativo ativoDomain : domain.getAtivos()) {
@@ -122,7 +116,6 @@ public class CarteiraRepositoryImpl implements CarteiraRepository {
         return Carteira.restore(
                 entity.getId(),
                 entity.getNomeCliente(),
-                entity.getRiscoCalculado(),
                 ativosDomain
         );
     }

@@ -76,20 +76,6 @@ class CarteiraRepositoryTest extends RepositoryAbstractTests {
     }
 
     @Test
-    @DisplayName("Deve atualizar o risco calculado da carteira")
-    void deveAtualizarRiscoCalculado() {
-        Carteira c = Carteira.create("Cliente Risco");
-        Carteira salva = carteiraRepository.save(c);
-        assertThat(salva.getRiscoCalculado()).isNull();
-
-        carteiraRepository.atualizarRisco(salva.getId(), 0.1234);
-
-        Optional<Carteira> atualizada = carteiraRepository.findById(salva.getId());
-        assertThat(atualizada).isPresent();
-        assertThat(atualizada.get().getRiscoCalculado()).isEqualTo(0.1234);
-    }
-
-    @Test
     @DisplayName("Deve retornar todos os registros e limpar a base com deleteAll")
     void deveListarTodasELimpar() {
         carteiraRepository.save(Carteira.create("C1"));
