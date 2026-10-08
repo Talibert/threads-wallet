@@ -6,11 +6,7 @@ import com.example.threadswallet.application.dto.SimulacaoResult;
 import com.example.threadswallet.application.usecase.GerarMassaDadosUseCase;
 import com.example.threadswallet.application.usecase.ProcessarCarteiraIndividualUseCase;
 import com.example.threadswallet.application.usecase.ProcessarMultiplasCarteirasUseCase;
-import com.example.threadswallet.domain.carteira.Carteira;
-import com.example.threadswallet.domain.carteira.CarteiraRepository;
-import com.example.threadswallet.domain.carteira.MetodoCalculo;
-import com.example.threadswallet.domain.carteira.RiscoCalculado;
-import com.example.threadswallet.domain.carteira.RiscoCalculadoRepository;
+import com.example.threadswallet.domain.carteira.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +42,8 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         assertEquals(totalCarteiras, geradas);
 
         // 2. Dispara o cálculo concorrente sobre as carteiras existentes com Monte Carlo
-        SimulacaoResult resultado = multiplasCarteirasUseCase.execute(totalCarteiras, null, MetodoCalculo.MONTE_CARLO);
+        ParametrosCalculo params = ParametrosCalculo.monteCarlo(100000);
+        SimulacaoResult resultado = multiplasCarteirasUseCase.execute(totalCarteiras, params);
 
         // Validações dos resultados
         assertNotNull(resultado);
@@ -89,7 +86,8 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         assertEquals(totalCarteiras, geradas);
 
         // 2. Dispara o cálculo concorrente sobre as carteiras existentes com VaR Paramétrico
-        SimulacaoResult resultado = multiplasCarteirasUseCase.execute(totalCarteiras, 0, MetodoCalculo.VAR_PARAMETRICO);
+        ParametrosCalculo params = ParametrosCalculo.varParametrico();
+        SimulacaoResult resultado = multiplasCarteirasUseCase.execute(totalCarteiras, params);
 
         assertNotNull(resultado);
         assertEquals(totalCarteiras, resultado.totalCarteirasProcessadas());
@@ -118,7 +116,8 @@ class SimuladorConcorrenciaIntegrationTest extends IntegrationAbstractTests {
         gerarMassaDadosUseCase.execute(1, 3, 5, true);
         Long carteiraId = carteiraRepository.findAllIds().getFirst();
 
-        CarteiraIndividualResult result = carteiraIndividualUseCase.execute(carteiraId, 10000, MetodoCalculo.MONTE_CARLO);
+        ParametrosCalculo params = ParametrosCalculo.monteCarlo(10000);
+        CarteiraIndividualResult result = carteiraIndividualUseCase.execute(carteiraId, params);
 
         assertNotNull(result);
         assertEquals(carteiraId, result.carteiraId());

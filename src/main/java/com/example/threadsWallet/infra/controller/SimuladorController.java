@@ -6,7 +6,8 @@ import com.example.threadswallet.application.usecase.GerarMassaDadosUseCase;
 import com.example.threadswallet.application.usecase.ListarCarteirasUseCase;
 import com.example.threadswallet.application.usecase.ProcessarCarteiraIndividualUseCase;
 import com.example.threadswallet.application.usecase.ProcessarMultiplasCarteirasUseCase;
-import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.ParametrosCalculo;
+import com.example.threadswallet.domain.exception.DomainException;
 import com.example.threadswallet.infra.controller.dto.CarteiraIndividualResponse;
 import com.example.threadswallet.infra.controller.dto.CarteiraResponse;
 import com.example.threadswallet.infra.controller.dto.SimulacaoResponse;
@@ -63,7 +64,7 @@ public class SimuladorController {
 
     @Operation(
             summary = "2. Calcular risco de múltiplas carteiras (em lote / batch)",
-            description = "Dispara o cálculo de risco concorrente em lote para as carteiras cadastradas. Cada carteira utiliza 1 Virtual Thread para I/O e 1 thread do pool de CPU para cálculo. Permite selecionar a estratégia: MONTE_CARLO ou VAR_PARAMETRICO."
+            description = "Dispara o cálculo de risco concorrente em lote para as carteiras cadastradas. Recebe o Value Object ParametrosCalculo via JSON body."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cálculo concluído com sucesso"),
@@ -74,18 +75,19 @@ public class SimuladorController {
     public ResponseEntity<SimulacaoResponse> processarMultiplasCarteiras(
             @Parameter(description = "Limite opcional de carteiras a processar (se omitido, processa todas as cadastradas)", example = "1000")
             @RequestParam(required = false) Integer limite,
-            @Parameter(description = "Número opcional de iterações do Monte Carlo por carteira (padrão: 100000)", example = "100000")
-            @RequestParam(required = false) Integer iteracoes,
-            @Parameter(description = "Método de cálculo obrigatório: MONTE_CARLO ou VAR_PARAMETRICO", example = "MONTE_CARLO", required = true)
-            @RequestParam(required = false) MetodoCalculo metodo
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Parâmetros de cálculo de risco (método e iterações)", required = true)
+            @RequestBody(required = false) ParametrosCalculo parametros
     ) {
-        SimulacaoResult result = processarMultiplasCarteirasUseCase.execute(limite, iteracoes, metodo);
+        if (parametros == null)
+            throw new DomainException("Os parâmetros de cálculo de risco são obrigatórios.");
+
+        SimulacaoResult result = processarMultiplasCarteirasUseCase.execute(limite, parametros);
         return ResponseEntity.ok(SimulacaoResponse.from(result));
     }
 
     @Operation(
             summary = "2.1. Calcular risco de uma carteira individual (sob demanda)",
-            description = "Calcula o risco de uma carteira específica sob demanda. Para MONTE_CARLO, divide as iterações entre todos os núcleos de CPU (Map-Reduce) para minimizar a latência. Para VAR_PARAMETRICO, executa diretamente em 1 thread de CPU."
+            description = "Calcula o risco de uma carteira específica sob demanda. Recebe o Value Object ParametrosCalculo via JSON body."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cálculo individual concluído com sucesso"),
@@ -96,12 +98,13 @@ public class SimuladorController {
     public ResponseEntity<CarteiraIndividualResponse> processarCarteiraIndividual(
             @Parameter(description = "ID da carteira a calcular", example = "1", required = true)
             @PathVariable Long carteiraId,
-            @Parameter(description = "Número opcional de iterações do Monte Carlo (padrão: 100000)", example = "100000")
-            @RequestParam(required = false) Integer iteracoes,
-            @Parameter(description = "Método de cálculo obrigatório: MONTE_CARLO ou VAR_PARAMETRICO", example = "MONTE_CARLO", required = true)
-            @RequestParam(required = false) MetodoCalculo metodo
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Parâmetros de cálculo de risco (método e iterações)", required = true)
+            @RequestBody(required = false) ParametrosCalculo parametros
     ) {
-        CarteiraIndividualResult result = processarCarteiraIndividualUseCase.execute(carteiraId, iteracoes, metodo);
+        if (parametros == null)
+            throw new DomainException("Os parâmetros de cálculo de risco são obrigatórios.");
+
+        CarteiraIndividualResult result = processarCarteiraIndividualUseCase.execute(carteiraId, parametros);
         return ResponseEntity.ok(CarteiraIndividualResponse.from(result));
     }
 

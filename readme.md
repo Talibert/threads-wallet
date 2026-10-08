@@ -110,6 +110,7 @@ com.example.threadswallet/
 │   │   ├── AtivoRepository.java                 # Interface de Repositório Ativo (DIP)
 │   │   ├── RiscoCalculadoRepository.java        # Interface de Repositório Risco (DIP)
 │   │   ├── CalculadoraRisco.java                # Interface de Cálculo de Risco (DIP)
+│   │   ├── ParametrosCalculo.java               # Value Object encapsulador de parâmetros de cálculo
 │   │   ├── AmostraRisco.java                    # Record de agregação de amostras Map-Reduce
 │   │   └── MetodoCalculo.java                   # Enum de Métodos de Cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
@@ -265,8 +266,8 @@ Para garantir testes rápidos e sem acoplamentos desnecessários, o projeto defi
 | Método | Endpoint | Parâmetros | Descrição |
 |---|---|---|---|
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a base de carteiras com 3 a 5 ativos cada no banco. |
-| `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente em lote (Throughput) com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
-| `POST` | `/api/simulador/carteiras/{carteiraId}/executar` | `carteiraId` (Path, ID da carteira)<br>`metodo` (obrigatório: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`iteracoes` (opcional, padrão: 100000) | **Cálculo de Carteira Individual (Latency):** Calcula o risco de uma carteira sob demanda. Para `MONTE_CARLO`, particiona as iterações entre todas as threads de CPU (Map-Reduce). Para `VAR_PARAMETRICO`, executa direto em 1 thread de CPU. |
+| `POST` | `/api/simulador/executar` | `limite` (Query opcional)<br>`Body: ParametrosCalculo` (`metodo` obrigatório, `iteracoes` opcional para Monte Carlo) | **Passo 2:** Dispara o cálculo concorrente em lote (Throughput) com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o body não for informado ou se a base estiver vazia. |
+| `POST` | `/api/simulador/carteiras/{carteiraId}/executar` | `carteiraId` (Path, ID da carteira)<br>`Body: ParametrosCalculo` (`metodo` obrigatório, `iteracoes` opcional para Monte Carlo) | **Cálculo de Carteira Individual (Latency):** Calcula o risco de uma carteira sob demanda. Para `MONTE_CARLO`, particiona as iterações entre todas as threads de CPU (Map-Reduce). Para `VAR_PARAMETRICO`, executa direto em 1 thread de CPU. Retorna 400 se o body não for informado. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras e seus riscos calculados. |
 | `POST` | `/api/carteiras/{carteiraId}/ativos/upload` | `carteiraId` (Path, ID da carteira)<br>`arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos por Carteira:** Recebe arquivo de ativos e associa todos à carteira indicada no path, salvando em lotes atômicos. |
 

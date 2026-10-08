@@ -2,8 +2,7 @@ package com.example.threadswallet.application.usecase;
 
 import com.example.threadswallet.UnitAbstractTests;
 import com.example.threadswallet.application.dto.SimulacaoResult;
-import com.example.threadswallet.domain.carteira.CarteiraRepository;
-import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.*;
 import com.example.threadswallet.domain.exception.DomainException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,7 +20,6 @@ import java.util.concurrent.Executors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -48,7 +46,6 @@ class ProcessarMultiplasCarteirasUseCaseTest extends UnitAbstractTests {
                 processarCarteiraUseCase,
                 carteiraRepository,
                 virtualThreadExecutor,
-                100000,
                 2
         );
     }
@@ -59,48 +56,49 @@ class ProcessarMultiplasCarteirasUseCaseTest extends UnitAbstractTests {
     }
 
     @Test
-    @DisplayName("Deve executar simulação disparando tarefas em Virtual Threads com iterações parametrizadas")
+    @DisplayName("Deve executar simulação disparando tarefas em Virtual Threads com ParametrosCalculo (Monte Carlo)")
     void deveExecutarSimulacaoComSucesso() {
         List<Long> ids = List.of(1L, 2L, 3L);
         when(carteiraRepository.findAllIds()).thenReturn(ids);
-        when(processarCarteiraUseCase.execute(anyLong(), anyInt(), any(MetodoCalculo.class))).thenReturn(0.15);
+        when(processarCarteiraUseCase.execute(anyLong(), any(ParametrosCalculo.class))).thenReturn(0.15);
 
-        int iteracoesCustom = 5000;
-        SimulacaoResult resultado = useCase.execute(null, iteracoesCustom, MetodoCalculo.MONTE_CARLO);
+        ParametrosCalculo params = ParametrosCalculo.monteCarlo(5000);
+        SimulacaoResult resultado = useCase.execute(null, params);
 
         assertNotNull(resultado);
         assertEquals(3, resultado.totalCarteirasProcessadas());
-        assertEquals(iteracoesCustom, resultado.iteracoesMonteCarloPorCarteira());
+        assertEquals(5000, resultado.iteracoesMonteCarloPorCarteira());
         assertEquals(MetodoCalculo.MONTE_CARLO, resultado.metodoCalculo());
 
-        verify(processarCarteiraUseCase, times(3)).execute(carteiraIdCaptor.capture(), eq(iteracoesCustom), eq(MetodoCalculo.MONTE_CARLO));
+        verify(processarCarteiraUseCase, times(3)).execute(carteiraIdCaptor.capture(), eq(params));
         assertThat(carteiraIdCaptor.getAllValues()).containsExactlyInAnyOrderElementsOf(ids);
     }
 
     @Test
-    @DisplayName("Deve executar simulação utilizando a estratégia VAR_PARAMETRICO")
+    @DisplayName("Deve executar simulação utilizando ParametrosCalculo (VaR Paramétrico)")
     void deveExecutarSimulacaoComMetodoParametrico() {
         List<Long> ids = List.of(10L, 20L);
         when(carteiraRepository.findAllIds()).thenReturn(ids);
-        when(processarCarteiraUseCase.execute(anyLong(), anyInt(), eq(MetodoCalculo.VAR_PARAMETRICO))).thenReturn(0.08);
+        when(processarCarteiraUseCase.execute(anyLong(), any(ParametrosCalculo.class))).thenReturn(0.08);
 
-        SimulacaoResult resultado = useCase.execute(null, 0, MetodoCalculo.VAR_PARAMETRICO);
+        ParametrosCalculo params = ParametrosCalculo.varParametrico();
+        SimulacaoResult resultado = useCase.execute(null, params);
 
         assertNotNull(resultado);
         assertEquals(2, resultado.totalCarteirasProcessadas());
         assertEquals(MetodoCalculo.VAR_PARAMETRICO, resultado.metodoCalculo());
 
-        verify(processarCarteiraUseCase, times(2)).execute(carteiraIdCaptor.capture(), eq(100000), eq(MetodoCalculo.VAR_PARAMETRICO));
+        verify(processarCarteiraUseCase, times(2)).execute(carteiraIdCaptor.capture(), eq(params));
         assertThat(carteiraIdCaptor.getAllValues()).containsExactlyInAnyOrderElementsOf(ids);
     }
 
     @Test
-    @DisplayName("Deve lançar DomainException quando o método de cálculo não for informado")
-    void deveLancarExcecaoQuandoMetodoCalculoNulo() {
+    @DisplayName("Deve lançar DomainException quando os parâmetros de cálculo forem nulos")
+    void deveLancarExcecaoQuandoParametrosNulos() {
         DomainException exception = assertThrows(DomainException.class,
-                () -> useCase.execute(null, 1000, null));
+                () -> useCase.execute(null, null));
 
-        assertEquals("O método de cálculo de risco é obrigatório.", exception.getMessage());
+        assertEquals("Os parâmetros de cálculo de risco são obrigatórios.", exception.getMessage());
         verifyNoInteractions(carteiraRepository);
         verifyNoInteractions(processarCarteiraUseCase);
     }
@@ -110,7 +108,7 @@ class ProcessarMultiplasCarteirasUseCaseTest extends UnitAbstractTests {
     void deveLancarExcecaoQuandoBaseVazia() {
         when(carteiraRepository.findAllIds()).thenReturn(List.of());
 
-        assertThrows(DomainException.class, () -> useCase.execute(null, null, MetodoCalculo.MONTE_CARLO));
+        assertThrows(DomainException.class, () -> useCase.execute(null, ParametrosCalculo.varParametrico()));
 
         verifyNoInteractions(processarCarteiraUseCase);
     }

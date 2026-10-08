@@ -37,6 +37,20 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Violação de Integridade", "Erro de integridade referencial: uma ou mais carteiras referenciadas não existem."));
     }
 
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        Throwable cause = ex.getMostSpecificCause();
+        if (cause instanceof DomainException domainEx)
+            return handleDomainException(domainEx);
+        if (cause instanceof IllegalArgumentException illegalEx)
+            return handleIllegalArgumentException(illegalEx);
+
+        log.warn("Mensagem HTTP ilegível ou JSON inválido: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Requisição Inválida", "Corpo da requisição ausente ou em formato inválido."));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
         log.error("Erro interno não tratado: ", ex);

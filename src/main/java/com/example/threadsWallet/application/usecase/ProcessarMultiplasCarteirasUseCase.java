@@ -2,7 +2,7 @@ package com.example.threadswallet.application.usecase;
 
 import com.example.threadswallet.application.dto.SimulacaoResult;
 import com.example.threadswallet.domain.carteira.CarteiraRepository;
-import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.ParametrosCalculo;
 import com.example.threadswallet.domain.exception.DomainException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,30 +24,27 @@ public class ProcessarMultiplasCarteirasUseCase {
     private final ProcessarCarteiraUseCase processarCarteiraUseCase;
     private final CarteiraRepository carteiraRepository;
     private final ExecutorService virtualThreadExecutor;
-    private final int iteracoesMonteCarloPadrao;
     private final int threadsReservadas;
 
     public ProcessarMultiplasCarteirasUseCase(
             ProcessarCarteiraUseCase processarCarteiraUseCase,
             CarteiraRepository carteiraRepository,
             @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor,
-            @Value("${simulador.monte-carlo.iteracoes:100000}") int iteracoesMonteCarloPadrao,
             @Value("${simulador.cpu-pool.threads-reservadas:2}") int threadsReservadas
     ) {
         this.processarCarteiraUseCase = processarCarteiraUseCase;
         this.carteiraRepository = carteiraRepository;
         this.virtualThreadExecutor = virtualThreadExecutor;
-        this.iteracoesMonteCarloPadrao = iteracoesMonteCarloPadrao;
         this.threadsReservadas = threadsReservadas;
     }
 
     /**
      * Executa o cálculo de risco concorrente em lote para múltiplas carteiras cadastradas.
-     * Dispara uma Virtual Thread exclusiva por carteira. Cada Virtual Thread utiliza 1 thread do pool de CPU.
+     * Recebe o Value Object ParametrosCalculo contendo método e iterações.
      */
-    public SimulacaoResult execute(Integer limite, Integer iteracoes, MetodoCalculo metodo) {
-        if (metodo == null)
-            throw new DomainException("O método de cálculo de risco é obrigatório.");
+    public SimulacaoResult execute(Integer limite, ParametrosCalculo parametros) {
+        if (parametros == null)
+            throw new DomainException("Os parâmetros de cálculo de risco são obrigatórios.");
 
         List<Long> carteiraIds = carteiraRepository.findAllIds();
 
@@ -60,16 +57,15 @@ public class ProcessarMultiplasCarteirasUseCase {
         int total = carteiraIds.size();
         int totalCores = Runtime.getRuntime().availableProcessors();
         int poolCores = Math.max(1, totalCores - threadsReservadas);
-        int totalIteracoes = (iteracoes != null && iteracoes > 0) ? iteracoes : this.iteracoesMonteCarloPadrao;
 
         log.info(">>> INICIANDO CRONÔMETRO: Submetendo {} carteiras (Método: {}, {} iterações) ao executor de Virtual Threads...",
-                total, metodo, totalIteracoes);
+                total, parametros.metodo(), parametros.iteracoes());
         long inicio = System.currentTimeMillis();
 
         // Cria uma thread virtual em cada iteração. Cada virtual thread chama o execute
         List<Future<?>> futures = new ArrayList<>(total);
         for (Long carteiraId : carteiraIds)
-            futures.add(virtualThreadExecutor.submit(() -> processarCarteiraUseCase.execute(carteiraId, totalIteracoes, metodo)));
+            futures.add(virtualThreadExecutor.submit(() -> processarCarteiraUseCase.execute(carteiraId, parametros)));
 
         // Aguarda a conclusão de todas as Virtual Threads
         for (Future<?> future : futures) {
@@ -101,7 +97,7 @@ public class ProcessarMultiplasCarteirasUseCase {
                  🧵 Gestão de I/O: %d Virtual Threads disparadas concorrentemente
                 ================================================================================
                 """,
-                total, metodo, tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, poolCores, totalCores, threadsReservadas, totalIteracoes, total
+                total, parametros.metodo(), tempoTotalMs, (tempoTotalMs / 1000.0), tempoMedioPorCarteira, poolCores, totalCores, threadsReservadas, parametros.iteracoes(), total
         );
 
         System.out.println(resumo);
@@ -112,8 +108,8 @@ public class ProcessarMultiplasCarteirasUseCase {
                 tempoTotalMs,
                 tempoMedioPorCarteira,
                 poolCores,
-                totalIteracoes,
-                metodo,
+                parametros.iteracoes(),
+                parametros.metodo(),
                 "Simulação massiva de concorrência concluída com sucesso."
         );
     }

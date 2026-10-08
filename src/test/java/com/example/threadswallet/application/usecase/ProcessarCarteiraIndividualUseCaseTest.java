@@ -22,7 +22,7 @@ import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 class ProcessarCarteiraIndividualUseCaseTest extends UnitAbstractTests {
@@ -54,7 +54,6 @@ class ProcessarCarteiraIndividualUseCaseTest extends UnitAbstractTests {
                 riscoCalculadoRepository,
                 List.of(monteCarloCalculadora, varParametricoCalculadora),
                 cpuThreadPool,
-                10000,
                 0 // 0 reservadas nos testes unitários para utilizar as threads disponíveis
         );
     }
@@ -75,11 +74,13 @@ class ProcessarCarteiraIndividualUseCaseTest extends UnitAbstractTests {
     @DisplayName("Deve processar carteira individual com MONTE_CARLO particionando em múltiplas threads de CPU")
     void deveProcessarCarteiraIndividualComMonteCarloParalelo() {
         Long carteiraId = 1L;
+        ParametrosCalculo params = ParametrosCalculo.monteCarlo(8000);
+
         when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(criarAtivosExemplo());
         when(riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.MONTE_CARLO))
                 .thenReturn(Optional.empty());
 
-        CarteiraIndividualResult result = useCase.execute(carteiraId, 8000, MetodoCalculo.MONTE_CARLO);
+        CarteiraIndividualResult result = useCase.execute(carteiraId, params);
 
         assertNotNull(result);
         assertEquals(carteiraId, result.carteiraId());
@@ -87,7 +88,6 @@ class ProcessarCarteiraIndividualUseCaseTest extends UnitAbstractTests {
         assertTrue(result.riscoCalculado() > 0.0);
         assertTrue(result.nucleosCpuUtilizados() > 1, "Deve ter particionado entre os núcleos de CPU");
 
-        // Verifica que calcularAmostra foi invocado múltiplas vezes
         verify(monteCarloCalculadora, atLeast(2)).calcularAmostra(any(), anyInt());
         verify(monteCarloCalculadora, times(1)).consolidarAmostras(any());
 
@@ -102,11 +102,13 @@ class ProcessarCarteiraIndividualUseCaseTest extends UnitAbstractTests {
     @DisplayName("Deve processar carteira individual com VAR_PARAMETRICO em uma única thread")
     void deveProcessarCarteiraIndividualComVarParametrico() {
         Long carteiraId = 2L;
+        ParametrosCalculo params = ParametrosCalculo.varParametrico();
+
         when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(criarAtivosExemplo());
         when(riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.VAR_PARAMETRICO))
                 .thenReturn(Optional.empty());
 
-        CarteiraIndividualResult result = useCase.execute(carteiraId, null, MetodoCalculo.VAR_PARAMETRICO);
+        CarteiraIndividualResult result = useCase.execute(carteiraId, params);
 
         assertNotNull(result);
         assertEquals(carteiraId, result.carteiraId());
@@ -122,13 +124,14 @@ class ProcessarCarteiraIndividualUseCaseTest extends UnitAbstractTests {
     @DisplayName("Deve atualizar risco existente se carteira já possuir cálculo prévio")
     void deveAtualizarRiscoExistente() {
         Long carteiraId = 3L;
+        ParametrosCalculo params = ParametrosCalculo.varParametrico();
         RiscoCalculado existente = RiscoCalculado.restore(10L, carteiraId, 0.05, MetodoCalculo.VAR_PARAMETRICO);
 
         when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(criarAtivosExemplo());
         when(riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, MetodoCalculo.VAR_PARAMETRICO))
                 .thenReturn(Optional.of(existente));
 
-        CarteiraIndividualResult result = useCase.execute(carteiraId, null, MetodoCalculo.VAR_PARAMETRICO);
+        CarteiraIndividualResult result = useCase.execute(carteiraId, params);
 
         verify(riscoCalculadoRepository, times(1)).salvar(existente);
         assertEquals(result.riscoCalculado(), existente.getValor());
@@ -141,16 +144,16 @@ class ProcessarCarteiraIndividualUseCaseTest extends UnitAbstractTests {
         when(carteiraRepository.findAtivosByCarteiraId(carteiraId)).thenReturn(List.of());
 
         DomainException ex = assertThrows(DomainException.class,
-                () -> useCase.execute(carteiraId, 1000, MetodoCalculo.MONTE_CARLO));
+                () -> useCase.execute(carteiraId, ParametrosCalculo.monteCarlo(1000)));
 
         assertEquals("Carteira com ID 99 não possui ativos ou não foi encontrada.", ex.getMessage());
         verify(riscoCalculadoRepository, never()).salvar(any());
     }
 
     @Test
-    @DisplayName("Deve lançar DomainException se carteiraId ou metodo forem nulos")
+    @DisplayName("Deve lançar DomainException se carteiraId ou parametros forem nulos")
     void deveValidarCamposObrigatorios() {
-        assertThrows(DomainException.class, () -> useCase.execute(null, 1000, MetodoCalculo.MONTE_CARLO));
-        assertThrows(DomainException.class, () -> useCase.execute(1L, 1000, null));
+        assertThrows(DomainException.class, () -> useCase.execute(null, ParametrosCalculo.monteCarlo(1000)));
+        assertThrows(DomainException.class, () -> useCase.execute(1L, null));
     }
 }

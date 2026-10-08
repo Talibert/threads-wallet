@@ -11,8 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -50,7 +49,12 @@ class SimuladorControllerTest extends ControllerAbstractTests {
     @DisplayName("POST /api/simulador/executar deve falhar com 400 se base estiver vazia")
     void deveFalharExecutarSeBaseVazia() throws Exception {
         mockMvc.perform(post("/api/simulador/executar")
-                        .contentType(MediaType.APPLICATION_JSON))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "metodo": "MONTE_CARLO"
+                                }
+                                """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Erro de Domínio"));
     }
@@ -64,12 +68,16 @@ class SimuladorControllerTest extends ControllerAbstractTests {
                         .param("limparAntes", "true"))
                 .andExpect(status().isOk());
 
-        // 2. Calcula risco via controller passando iterações customizadas
+        // 2. Calcula risco via controller passando body com iterações customizadas
         mockMvc.perform(post("/api/simulador/executar")
                         .param("limite", "10")
-                        .param("iteracoes", "5000")
-                        .param("metodo", "MONTE_CARLO")
-                        .contentType(MediaType.APPLICATION_JSON))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "metodo": "MONTE_CARLO",
+                                    "iteracoes": 5000
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalCarteirasProcessadas").value(10))
                 .andExpect(jsonPath("$.tempoTotalMs").isNumber())
@@ -78,12 +86,39 @@ class SimuladorControllerTest extends ControllerAbstractTests {
                 .andExpect(jsonPath("$.metodoCalculo").value("MONTE_CARLO"));
 
         // 3. Verifica via Mockito que o SpyBean da calculadora Monte Carlo foi chamado com 5.000 iterações
-        verify(calculadoraRisco, atLeastOnce()).calcularRisco(anyList(), org.mockito.ArgumentMatchers.eq(5000));
+        verify(calculadoraRisco, atLeastOnce()).calcularRisco(anyList(), eq(5000));
 
         // 4. Consulta lista de carteiras
         mockMvc.perform(get("/api/simulador/carteiras"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(10));
+    }
+
+    @Test
+    @DisplayName("POST /api/simulador/executar com JSON Body de Monte Carlo")
+    void deveExecutarViaApiComJsonBodyMonteCarlo() throws Exception {
+        mockMvc.perform(post("/api/simulador/massa-dados")
+                        .param("totalCarteiras", "5")
+                        .param("limparAntes", "true"))
+                .andExpect(status().isOk());
+
+        String jsonBody = """
+                {
+                    "metodo": "MONTE_CARLO",
+                    "iteracoes": 2500
+                }
+                """;
+
+        mockMvc.perform(post("/api/simulador/executar")
+                        .param("limite", "5")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalCarteirasProcessadas").value(5))
+                .andExpect(jsonPath("$.iteracoesMonteCarloPorCarteira").value(2500))
+                .andExpect(jsonPath("$.metodoCalculo").value("MONTE_CARLO"));
+
+        verify(calculadoraRisco, atLeastOnce()).calcularRisco(anyList(), eq(2500));
     }
 
     @Test
@@ -95,8 +130,12 @@ class SimuladorControllerTest extends ControllerAbstractTests {
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/simulador/executar")
-                        .param("metodo", "VAR_PARAMETRICO")
-                        .contentType(MediaType.APPLICATION_JSON))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "metodo": "VAR_PARAMETRICO"
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalCarteirasProcessadas").value(5))
                 .andExpect(jsonPath("$.metodoCalculo").value("VAR_PARAMETRICO"));
@@ -105,8 +144,8 @@ class SimuladorControllerTest extends ControllerAbstractTests {
     }
 
     @Test
-    @DisplayName("POST /api/simulador/executar sem metodo deve retornar HTTP 400 Bad Request")
-    void deveRetornar400QuandoMetodoNaoInformado() throws Exception {
+    @DisplayName("POST /api/simulador/executar sem body deve retornar HTTP 400 Bad Request")
+    void deveRetornar400QuandoBodyNulo() throws Exception {
         mockMvc.perform(post("/api/simulador/massa-dados")
                         .param("totalCarteiras", "1")
                         .param("limparAntes", "true"))
@@ -114,6 +153,22 @@ class SimuladorControllerTest extends ControllerAbstractTests {
 
         mockMvc.perform(post("/api/simulador/executar")
                         .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Erro de Domínio"))
+                .andExpect(jsonPath("$.message").value("Os parâmetros de cálculo de risco são obrigatórios."));
+    }
+
+    @Test
+    @DisplayName("POST /api/simulador/executar com body vazio sem metodo deve retornar HTTP 400 Bad Request")
+    void deveRetornar400QuandoMetodoNaoInformado() throws Exception {
+        mockMvc.perform(post("/api/simulador/massa-dados")
+                        .param("totalCarteiras", "1")
+                        .param("limparAntes", "true"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/simulador/executar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Erro de Domínio"))
                 .andExpect(jsonPath("$.message").value("O método de cálculo de risco é obrigatório."));
@@ -130,9 +185,13 @@ class SimuladorControllerTest extends ControllerAbstractTests {
         Long carteiraId = carteiraRepository.findAllIds().getFirst();
 
         mockMvc.perform(post("/api/simulador/carteiras/" + carteiraId + "/executar")
-                        .param("metodo", "MONTE_CARLO")
-                        .param("iteracoes", "10000")
-                        .contentType(MediaType.APPLICATION_JSON))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "metodo": "MONTE_CARLO",
+                                    "iteracoes": 10000
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.carteiraId").value(carteiraId))
                 .andExpect(jsonPath("$.riscoCalculado").isNumber())
@@ -152,13 +211,26 @@ class SimuladorControllerTest extends ControllerAbstractTests {
         Long carteiraId = carteiraRepository.findAllIds().getFirst();
 
         mockMvc.perform(post("/api/simulador/carteiras/" + carteiraId + "/executar")
-                        .param("metodo", "VAR_PARAMETRICO")
-                        .contentType(MediaType.APPLICATION_JSON))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "metodo": "VAR_PARAMETRICO"
+                                }
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.carteiraId").value(carteiraId))
                 .andExpect(jsonPath("$.riscoCalculado").isNumber())
                 .andExpect(jsonPath("$.metodoCalculo").value("VAR_PARAMETRICO"))
                 .andExpect(jsonPath("$.nucleosCpuUtilizados").value(1));
     }
-}
 
+    @Test
+    @DisplayName("POST /api/simulador/carteiras/{carteiraId}/executar sem body deve retornar HTTP 400 Bad Request")
+    void deveRetornar400CarteiraIndividualSemBody() throws Exception {
+        mockMvc.perform(post("/api/simulador/carteiras/1/executar")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Erro de Domínio"))
+                .andExpect(jsonPath("$.message").value("Os parâmetros de cálculo de risco são obrigatórios."));
+    }
+}

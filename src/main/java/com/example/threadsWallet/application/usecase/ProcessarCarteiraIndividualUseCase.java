@@ -24,7 +24,6 @@ public class ProcessarCarteiraIndividualUseCase {
     private final RiscoCalculadoRepository riscoCalculadoRepository;
     private final Map<MetodoCalculo, CalculadoraRisco> calculadoras;
     private final ExecutorService cpuThreadPool;
-    private final int iteracoesPadrao;
     private final int threadsReservadas;
 
     public ProcessarCarteiraIndividualUseCase(
@@ -32,7 +31,6 @@ public class ProcessarCarteiraIndividualUseCase {
             RiscoCalculadoRepository riscoCalculadoRepository,
             List<CalculadoraRisco> calculadoras,
             @Qualifier("cpuThreadPool") ExecutorService cpuThreadPool,
-            @Value("${simulador.monte-carlo.iteracoes:100000}") int iteracoesPadrao,
             @Value("${simulador.cpu-pool.threads-reservadas:2}") int threadsReservadas
     ) {
         this.carteiraRepository = carteiraRepository;
@@ -40,44 +38,40 @@ public class ProcessarCarteiraIndividualUseCase {
         this.calculadoras = calculadoras.stream()
                 .collect(Collectors.toMap(CalculadoraRisco::getMetodo, Function.identity()));
         this.cpuThreadPool = cpuThreadPool;
-        this.iteracoesPadrao = iteracoesPadrao;
         this.threadsReservadas = threadsReservadas;
     }
 
     /**
      * Processa o cálculo de risco de uma carteira individual sob demanda.
-     * Se o método for paralelizável (ex: MONTE_CARLO), particiona o cálculo em todas as threads do pool de CPU.
-     * Se o método for analítico (ex: VAR_PARAMETRICO), executa em uma única thread sem overhead.
+     * Recebe o Value Object ParametrosCalculo contendo o método e iterações.
      */
-    public CarteiraIndividualResult execute(Long carteiraId, Integer iteracoes, MetodoCalculo metodo) {
+    public CarteiraIndividualResult execute(Long carteiraId, ParametrosCalculo parametros) {
         if (carteiraId == null)
             throw new DomainException("O ID da carteira é obrigatório.");
 
-        if (metodo == null)
-            throw new DomainException("O método de cálculo de risco é obrigatório.");
+        if (parametros == null)
+            throw new DomainException("Os parâmetros de cálculo de risco são obrigatórios.");
 
-        CalculadoraRisco calculadora = calculadoras.get(metodo);
-
+        CalculadoraRisco calculadora = calculadoras.get(parametros.metodo());
         if (calculadora == null)
-            throw new DomainException("Nenhuma calculadora de risco encontrada para o método: " + metodo);
+            throw new DomainException("Nenhuma calculadora de risco encontrada para o método: " + parametros.metodo());
 
         List<Ativo> ativos = carteiraRepository.findAtivosByCarteiraId(carteiraId);
 
         if (ativos.isEmpty())
             throw new DomainException("Carteira com ID " + carteiraId + " não possui ativos ou não foi encontrada.");
 
-        int totalIteracoes = (iteracoes != null && iteracoes > 0) ? iteracoes : this.iteracoesPadrao;
         long inicio = System.currentTimeMillis();
-
         Double riscoCalculado;
         int nucleosCpuUtilizados;
 
         try {
             if (!calculadora.isParalelizavel()) {
                 nucleosCpuUtilizados = 1;
-                Future<Double> future = cpuThreadPool.submit(() -> calculadora.calcularRisco(ativos, totalIteracoes));
+                Future<Double> future = cpuThreadPool.submit(() -> calculadora.calcularRisco(ativos, parametros.iteracoes()));
                 riscoCalculado = future.get();
             } else {
+                int totalIteracoes = parametros.iteracoes();
                 int totalCores = Runtime.getRuntime().availableProcessors();
                 int poolCores = Math.max(1, totalCores - threadsReservadas);
                 int numChunks = Math.clamp(totalIteracoes, 1, poolCores);
@@ -105,13 +99,13 @@ public class ProcessarCarteiraIndividualUseCase {
             throw new RuntimeException("Erro ao calcular risco da carteira individual " + carteiraId, e.getCause());
         }
 
-        Optional<RiscoCalculado> existente = riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, metodo);
+        Optional<RiscoCalculado> existente = riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, parametros.metodo());
         if (existente.isPresent()) {
             RiscoCalculado risco = existente.get();
             risco.atualizarValor(riscoCalculado);
             riscoCalculadoRepository.salvar(risco);
         } else
-            riscoCalculadoRepository.salvar(RiscoCalculado.create(carteiraId, riscoCalculado, metodo));
+            riscoCalculadoRepository.salvar(RiscoCalculado.create(carteiraId, riscoCalculado, parametros.metodo()));
 
         long fim = System.currentTimeMillis();
         long tempoTotalMs = fim - inicio;
@@ -119,10 +113,10 @@ public class ProcessarCarteiraIndividualUseCase {
         return new CarteiraIndividualResult(
                 carteiraId,
                 riscoCalculado,
-                metodo,
+                parametros.metodo(),
                 tempoTotalMs,
                 nucleosCpuUtilizados,
-                totalIteracoes
+                parametros.iteracoes()
         );
     }
 }

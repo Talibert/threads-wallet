@@ -35,9 +35,10 @@ O **Threads Wallet** é um projeto em **Java 21** e **Spring Boot 3.5** projetad
 2. **Dimensionamento Responsivo:** O tamanho do pool é dimensionado como `Math.max(1, cores - threadsReservadas)` (padrão de 2 threads reservadas via `simulador.cpu-pool.threads-reservadas`), garantindo que o Sistema Operacional, a JVM (Garbage Collector e JIT) e as Carrier Threads de I/O mantenham responsividade contínua mesmo sob saturação de simulações matemáticas.
 3. **Estratégias de Cálculo (Stateless - Strategy Pattern):**
    - Ambas as implementações de [`CalculadoraRisco`](file:///src/main/java/com/example/threadswallet/domain/carteira/CalculadoraRisco.java) são **completamente stateless (não guardam estado interno)**.
-   - **Monte Carlo ([`MonteCarloCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoImpl.java)):** Executa o laço gerando choques gaussianos aleatórios via `ThreadLocalRandom.current()` para simular volatilidade. Suporta particionamento via `calcularAmostra` e agregação via `consolidarAmostras` ([`AmostraRisco`](file:///src/main/java/com/example/threadswallet/domain/carteira/AmostraRisco.java)).
-   - **VaR Paramétrico ([`VarParametricoCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/VarParametricoCalculadoraRiscoImpl.java)):** Executa a fórmula analítica de variância-covariância sob distribuição normal para VaR 95% ($O(N)$). Executado de forma unitária (1 thread).
-   - **Injeção de Estratégias via Spring:** O Spring injeta automaticamente todas as implementações (`List<CalculadoraRisco>`) nos casos de uso, que indexam as estratégias em um mapa imutável por [`MetodoCalculo`](file:///src/main/java/com/example/threadswallet/domain/carteira/MetodoCalculo.java).
+   - Os parâmetros de execução são encapsulados no Value Object [`ParametrosCalculo`](file:///src/main/java/com/example/threadswallet/domain/carteira/ParametrosCalculo.java) (`record ParametrosCalculo(MetodoCalculo metodo, Integer iteracoes)`), que centraliza validações e sanitiza os parâmetros (ex: garantindo 0 iterações para `VAR_PARAMETRICO` e default de 100.000 para `MONTE_CARLO`).
+   - **Monte Carlo ([`MonteCarloCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/MonteCarloCalculadoraRiscoImpl.java)):** Executa simulação estocástica pesada. Suporta particionamento via `calcularAmostra` e agregação via `consolidarAmostras` ([`AmostraRisco`](file:///src/main/java/com/example/threadswallet/domain/carteira/AmostraRisco.java)).
+   - **VaR Paramétrico ([`VarParametricoCalculadoraRiscoImpl`](file:///src/main/java/com/example/threadswallet/infra/calculation/VarParametricoCalculadoraRiscoImpl.java)):** Executa a fórmula analítica em $O(N)$ em 1 thread nativa de CPU.
+   - **Injeção de Estratégias nos Use Cases:** Os casos de uso injetam `List<CalculadoraRisco>` fornecida pelo Spring, mapeando-a dinamicamente por `MetodoCalculo` (`Collectors.toMap(CalculadoraRisco::getMetodo, ...)`), garantindo alta extensibilidade (Open-Closed Principle).
 
 ---
 
@@ -118,7 +119,8 @@ com.example.threadswallet/
 │   │   ├── CarteiraRepository.java              # Interface de persistência da carteira (DIP)
 │   │   ├── AtivoRepository.java                 # Interface de persistência do ativo (DIP)
 │   │   ├── RiscoCalculadoRepository.java        # Interface de persistência do risco calculado (DIP)
-│   │   ├── CalculadoraRisco.java                # Interface para o cálculo de risco (DIP)
+│   │   ├── CalculadoraRisco.java                # Interface de cálculo de risco (DIP)
+│   │   ├── ParametrosCalculo.java               # Value Object encapsulador de parâmetros de cálculo
 │   │   ├── AmostraRisco.java                    # Record para agregação de amostras Map-Reduce
 │   │   └── MetodoCalculo.java                   # Enum de métodos de cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/
@@ -240,8 +242,8 @@ Com a aplicação rodando (`./mvnw spring-boot:run` com o PostgreSQL do `docker-
 | Método | Endpoint | Parâmetros | Descrição |
 |---|---|---|---|
 | `POST` | `/api/simulador/massa-dados` | `totalCarteiras` (padrão: 1000)<br>`limparAntes` (padrão: true) | **Passo 1:** Gera a massa de carteiras com 3 a 5 ativos cada no banco. |
-| `POST` | `/api/simulador/executar` | `metodo` (obrigatório, opções: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`limite` (opcional)<br>`iteracoes` (padrão: 100000) | **Passo 2:** Dispara o cálculo concorrente em lote (Throughput) com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o método não for informado ou se a base estiver vazia. |
-| `POST` | `/api/simulador/carteiras/{carteiraId}/executar` | `carteiraId` (Path, ID da carteira)<br>`metodo` (obrigatório: `MONTE_CARLO`, `VAR_PARAMETRICO`)<br>`iteracoes` (opcional, padrão: 100000) | **Cálculo de Carteira Individual (Latency):** Calcula o risco de uma carteira sob demanda. Para `MONTE_CARLO`, divide as iterações entre todas as threads de CPU (Map-Reduce). Para `VAR_PARAMETRICO`, executa direto em 1 thread de CPU. |
+| `POST` | `/api/simulador/executar` | `limite` (Query opcional)<br>`Body: ParametrosCalculo` (`metodo` obrigatório, `iteracoes` opcional para Monte Carlo) | **Passo 2:** Dispara o cálculo concorrente em lote (Throughput) com Virtual Threads e CPU pool para as carteiras cadastradas usando a estratégia selecionada. Retorna erro 400 se o body não for informado ou se a base estiver vazia. |
+| `POST` | `/api/simulador/carteiras/{carteiraId}/executar` | `carteiraId` (Path, ID da carteira)<br>`Body: ParametrosCalculo` (`metodo` obrigatório, `iteracoes` opcional para Monte Carlo) | **Cálculo de Carteira Individual (Latency):** Calcula o risco de uma carteira sob demanda. Para `MONTE_CARLO`, divide as iterações entre todas as threads de CPU (Map-Reduce). Para `VAR_PARAMETRICO`, executa direto em 1 thread de CPU. Retorna 400 se o body não for informado. |
 | `GET` | `/api/simulador/carteiras` | - | **Passo 3:** Consulta as carteiras cadastradas e seus riscos calculados. |
 | `POST` | `/api/carteiras/{carteiraId}/ativos/upload` | `carteiraId` (Path, ID da carteira)<br>`arquivo` (Multipart, `.csv` ou `.txt`) | **Ingestão de Ativos por Carteira:** Recebe arquivo de ativos e associa todos à carteira indicada no path, salvando em lotes atômicos. Rejeita arquivos vazios, formatos inválidos ou carteiras inexistentes (400). |
 

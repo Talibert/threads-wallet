@@ -44,8 +44,8 @@ class VarParametricoCalculadoraRiscoTest extends UnitAbstractTests {
     @Test
     @DisplayName("Deve retornar zero se a lista de ativos for nula ou vazia")
     void deveRetornarZeroListaVazia() {
-        assertEquals(0.0, calculadora.calcularRisco(List.of(), 100));
-        assertEquals(0.0, calculadora.calcularRisco(null, 100));
+        assertEquals(0.0, calculadora.calcularRisco(List.of(), 0));
+        assertEquals(0.0, calculadora.calcularRisco(null, 0));
     }
 
     @Test
@@ -67,10 +67,9 @@ class VarParametricoCalculadoraRiscoTest extends UnitAbstractTests {
         assertFalse(calculadora.isParalelizavel());
 
         assertThrows(UnsupportedOperationException.class,
-                () -> calculadora.calcularAmostra(List.of(), 100));
+                () -> calculadora.calcularAmostra(List.of(), 0));
 
         assertThrows(UnsupportedOperationException.class,
                 () -> calculadora.consolidarAmostras(List.of()));
     }
 }
-
