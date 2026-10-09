@@ -111,6 +111,7 @@ com.example.threadswallet/
 │   │   ├── RiscoCalculadoRepository.java        # Interface de Repositório Risco (DIP)
 │   │   ├── CalculadoraRisco.java                # Interface de Cálculo de Risco (DIP)
 │   │   ├── ParametrosCalculo.java               # Value Object encapsulador de parâmetros de cálculo
+│   │   ├── ResultadoCalculo.java                # Value Object encapsulador do resultado do cálculo e núcleos
 │   │   ├── AmostraRisco.java                    # Record de agregação de amostras Map-Reduce
 │   │   └── MetodoCalculo.java                   # Enum de Métodos de Cálculo (MONTE_CARLO, VAR_PARAMETRICO)
 │   └── exception/

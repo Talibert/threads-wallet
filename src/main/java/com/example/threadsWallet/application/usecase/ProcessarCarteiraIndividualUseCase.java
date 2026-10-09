@@ -7,13 +7,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -62,42 +59,23 @@ public class ProcessarCarteiraIndividualUseCase {
             throw new DomainException("Carteira com ID " + carteiraId + " não possui ativos ou não foi encontrada.");
 
         long inicio = System.currentTimeMillis();
-        Double riscoCalculado;
-        int nucleosCpuUtilizados;
 
-        try {
-            if (!calculadora.isParalelizavel()) {
-                nucleosCpuUtilizados = 1;
-                Future<Double> future = cpuThreadPool.submit(() -> calculadora.calcularRisco(ativos, parametros.iteracoes()));
-                riscoCalculado = future.get();
-            } else {
-                int totalIteracoes = parametros.iteracoes();
-                int totalCores = Runtime.getRuntime().availableProcessors();
-                int poolCores = Math.max(1, totalCores - threadsReservadas);
-                int numChunks = Math.clamp(totalIteracoes, 1, poolCores);
-                nucleosCpuUtilizados = numChunks;
+        // 1. Identifica a capacidade do pool fixo de CPU respeitando as threads reservadas para SO/JVM/Carrier
+        int totalCores = Runtime.getRuntime().availableProcessors();
+        int poolCores = Math.max(1, totalCores - threadsReservadas);
 
-                int iteracoesPorChunk = totalIteracoes / numChunks;
-                int resto = totalIteracoes % numChunks;
+        // 2. Delega a execução paralela para a calculadora selecionada (Strategy Pattern).
+        // Cada estratégia decide sua própria política de concorrência (ex: Monte Carlo faz Map-Reduce particionando iterações;
+        // VaR Paramétrico despacha uma única tarefa de CPU sem concorrência desnecessária).
+        ResultadoCalculo resultado = calculadora.calcularRiscoParalelo(
+                ativos,
+                parametros.iteracoes(),
+                cpuThreadPool,
+                poolCores
+        );
 
-                List<Future<AmostraRisco>> futures = new ArrayList<>(numChunks);
-                for (int i = 0; i < numChunks; i++) {
-                    int iteracoesDesteChunk = iteracoesPorChunk + (i == 0 ? resto : 0);
-                    futures.add(cpuThreadPool.submit(() -> calculadora.calcularAmostra(ativos, iteracoesDesteChunk)));
-                }
-
-                List<AmostraRisco> amostras = new ArrayList<>(numChunks);
-                for (Future<AmostraRisco> future : futures)
-                    amostras.add(future.get());
-
-                riscoCalculado = calculadora.consolidarAmostras(amostras);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Processamento da carteira individual " + carteiraId + " foi interrompido", e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException("Erro ao calcular risco da carteira individual " + carteiraId, e.getCause());
-        }
+        Double riscoCalculado = resultado.valor();
+        int nucleosCpuUtilizados = resultado.nucleosUtilizados();
 
         Optional<RiscoCalculado> existente = riscoCalculadoRepository.findByCarteiraIdAndTipo(carteiraId, parametros.metodo());
         if (existente.isPresent()) {

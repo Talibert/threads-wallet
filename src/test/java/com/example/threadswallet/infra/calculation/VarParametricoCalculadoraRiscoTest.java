@@ -3,11 +3,14 @@ package com.example.threadswallet.infra.calculation;
 import com.example.threadswallet.UnitAbstractTests;
 import com.example.threadswallet.domain.carteira.Ativo;
 import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.ResultadoCalculo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Spy;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -62,14 +65,18 @@ class VarParametricoCalculadoraRiscoTest extends UnitAbstractTests {
     }
 
     @Test
-    @DisplayName("Deve retornar false para isParalelizavel e lançar exceção ao chamar métodos de amostras")
-    void deveValidarComportamentoNaoParalelizavel() {
-        assertFalse(calculadora.isParalelizavel());
+    @DisplayName("Deve executar calcularRiscoParalelo utilizando exatamente 1 thread no pool de CPU")
+    void deveExecutarCalculoParaleloComUmaThread() {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Ativo> ativos = List.of(Ativo.create(1L, "VALE3", 10000.0, 0.2));
+            ResultadoCalculo resultado = calculadora.calcularRiscoParalelo(ativos, 0, executor, 2);
 
-        assertThrows(UnsupportedOperationException.class,
-                () -> calculadora.calcularAmostra(List.of(), 0));
-
-        assertThrows(UnsupportedOperationException.class,
-                () -> calculadora.consolidarAmostras(List.of()));
+            assertNotNull(resultado);
+            assertEquals(1, resultado.nucleosUtilizados());
+            assertTrue(resultado.valor() > 0.0);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 }

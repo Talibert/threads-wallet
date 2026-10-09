@@ -1,12 +1,15 @@
 package com.example.threadswallet.infra.calculation;
 
-import com.example.threadswallet.domain.carteira.AmostraRisco;
 import com.example.threadswallet.domain.carteira.Ativo;
 import com.example.threadswallet.domain.carteira.CalculadoraRisco;
 import com.example.threadswallet.domain.carteira.MetodoCalculo;
+import com.example.threadswallet.domain.carteira.ResultadoCalculo;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 /**
  * Implementação stateless de cálculo de risco analítico utilizando VaR Paramétrico (Variância-Covariância).
@@ -49,18 +52,19 @@ public class VarParametricoCalculadoraRiscoImpl implements CalculadoraRisco {
     }
 
     @Override
-    public boolean isParalelizavel() {
-        return false;
-    }
-
-    @Override
-    public AmostraRisco calcularAmostra(List<Ativo> ativos, int iteracoes) {
-        throw new UnsupportedOperationException("O método VAR_PARAMETRICO não suporta particionamento por amostras.");
-    }
-
-    @Override
-    public Double consolidarAmostras(List<AmostraRisco> amostras) {
-        throw new UnsupportedOperationException("O método VAR_PARAMETRICO não suporta consolidação de amostras.");
+    public ResultadoCalculo calcularRiscoParalelo(List<Ativo> ativos, int iteracoes, ExecutorService cpuThreadPool, int threadsDisponiveis) {
+        // VaR Paramétrico analítico em O(N): o cálculo é instantâneo (< 0.001 ms).
+        // Despachamos uma única tarefa para 1 thread nativa do pool de CPU, evitando overhead de concorrência.
+        try {
+            Future<Double> future = cpuThreadPool.submit(() -> calcularRisco(ativos, iteracoes));
+            Double risco = future.get();
+            return new ResultadoCalculo(risco, 1);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Cálculo de VaR Paramétrico foi interrompido", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Erro ao calcular VaR Paramétrico", e.getCause());
+        }
     }
 
     @Override

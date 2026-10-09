@@ -63,10 +63,8 @@ class MonteCarloCalculadoraRiscoTest extends UnitAbstractTests {
     }
 
     @Test
-    @DisplayName("Deve retornar true para isParalelizavel, calcular amostra e consolidar com sucesso")
+    @DisplayName("Deve calcular amostra e consolidar com sucesso")
     void deveCalcularAmostraEConsolidar() {
-        assertTrue(calculadora.isParalelizavel());
-
         List<Ativo> ativos = List.of(
                 Ativo.create(1L, "PETR4", 20000.0, 0.30),
                 Ativo.create(1L, "VALE3", 30000.0, 0.25)
@@ -83,5 +81,26 @@ class MonteCarloCalculadoraRiscoTest extends UnitAbstractTests {
         Double riscoConsolidado = calculadora.consolidarAmostras(List.of(amostra1, amostra2));
         assertNotNull(riscoConsolidado);
         assertTrue(riscoConsolidado > 0.0);
+    }
+
+    @Test
+    @DisplayName("Deve executar calcularRiscoParalelo particionando iterações em múltiplos chunks")
+    void deveCalcularRiscoParaleloParticionandoChunks() {
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            List<Ativo> ativos = List.of(
+                    Ativo.create(1L, "PETR4", 20000.0, 0.30),
+                    Ativo.create(1L, "VALE3", 30000.0, 0.25)
+            );
+
+            com.example.threadswallet.domain.carteira.ResultadoCalculo resultado =
+                    calculadora.calcularRiscoParalelo(ativos, 10000, executor, 4);
+
+            assertNotNull(resultado);
+            assertEquals(4, resultado.nucleosUtilizados());
+            assertTrue(resultado.valor() > 0.0);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 }
